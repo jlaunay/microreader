@@ -27,6 +27,8 @@ class EpubWordProvider : public WordProvider {
 
   float getPercentage() override;
   float getPercentage(int index) override;
+  float getChapterPercentage() override;
+  float getChapterPercentage(int index) override;
   void setPosition(int index) override;
   int getCurrentIndex() override;
   char peekChar(int offset = 0) override;
@@ -41,6 +43,9 @@ class EpubWordProvider : public WordProvider {
   bool hasChapters() override {
     return isEpub_;
   }
+  String getCurrentChapterName() override {
+    return currentChapterName_;
+  }
 
  private:
   // Opens a specific chapter (spine item) for reading
@@ -52,6 +57,7 @@ class EpubWordProvider : public WordProvider {
 
   String epubPath_;
   String xhtmlPath_;                  // Path to current extracted XHTML file
+  String currentChapterName_;         // Cached chapter name from TOC
   EpubReader* epubReader_ = nullptr;  // Kept alive for chapter navigation
   SimpleXmlParser* parser_ = nullptr;
   int currentChapter_ = 0;  // Current chapter index (0-based)

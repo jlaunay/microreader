@@ -163,6 +163,9 @@ bool EpubWordProvider::openChapter(int chapterIndex) {
   currentChapter_ = chapterIndex;
   fileSize_ = parser_->getFileSize();
 
+  // Cache the chapter name from TOC
+  currentChapterName_ = epubReader_->getChapterNameForSpine(chapterIndex);
+
   // Position parser at first node for reading
   parser_->read();
   prevFilePos_ = 0;
@@ -550,12 +553,54 @@ String EpubWordProvider::getPrevWord() {
 }
 
 float EpubWordProvider::getPercentage() {
-  if (!parser_ || fileSize_ == 0)
+  if (!parser_)
+    return 1.0f;
+
+  // For EPUBs, calculate book-wide percentage
+  if (isEpub_ && epubReader_) {
+    size_t totalSize = epubReader_->getTotalBookSize();
+    if (totalSize == 0)
+      return 1.0f;
+
+    size_t chapterOffset = epubReader_->getSpineItemOffset(currentChapter_);
+    size_t positionInChapter = parser_->getFilePosition();
+    size_t absolutePosition = chapterOffset + positionInChapter;
+
+    return static_cast<float>(absolutePosition) / static_cast<float>(totalSize);
+  }
+
+  // For single XHTML files, use file-based percentage
+  if (fileSize_ == 0)
     return 1.0f;
   return static_cast<float>(parser_->getFilePosition()) / static_cast<float>(fileSize_);
 }
 
 float EpubWordProvider::getPercentage(int index) {
+  // For EPUBs, calculate book-wide percentage for a given position in current chapter
+  if (isEpub_ && epubReader_) {
+    size_t totalSize = epubReader_->getTotalBookSize();
+    if (totalSize == 0)
+      return 1.0f;
+
+    size_t chapterOffset = epubReader_->getSpineItemOffset(currentChapter_);
+    size_t absolutePosition = chapterOffset + index;
+
+    return static_cast<float>(absolutePosition) / static_cast<float>(totalSize);
+  }
+
+  // For single XHTML files
+  if (fileSize_ == 0)
+    return 1.0f;
+  return static_cast<float>(index) / static_cast<float>(fileSize_);
+}
+
+float EpubWordProvider::getChapterPercentage() {
+  if (!parser_ || fileSize_ == 0)
+    return 1.0f;
+  return static_cast<float>(parser_->getFilePosition()) / static_cast<float>(fileSize_);
+}
+
+float EpubWordProvider::getChapterPercentage(int index) {
   if (fileSize_ == 0)
     return 1.0f;
   return static_cast<float>(index) / static_cast<float>(fileSize_);

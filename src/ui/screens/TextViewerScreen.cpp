@@ -243,25 +243,29 @@ void TextViewerScreen::showPage() {
   Serial.print("Page end: ");
   Serial.println(pageEndIndex);
 
-  // page indicator - now shows percentage
+  // page indicator - now shows book-wide percentage
   {
     // Render to BW buffer
     textRenderer.setFrameBuffer(display.getFrameBuffer());
     textRenderer.setBitmapType(TextRenderer::BITMAP_BW);
 
-    // If there are no more words, set percentage to 100%
-    float pagePercentage = 1.0f;
-    if (provider->getPercentage(pageEndIndex) < 1.0f)
-      pagePercentage = provider->getPercentage();
+    // Use book-wide percentage for display
+    // If at end of chapter and it's the last chapter, show 100%
+    float pagePercentage = provider->getPercentage();
+    if (provider->getChapterPercentage(pageEndIndex) >= 1.0f) {
+      // At end of current chapter - check if it's the last chapter
+      if (!provider->hasChapters() || provider->getCurrentChapter() >= provider->getChapterCount() - 1) {
+        pagePercentage = 1.0f;
+      }
+    }
 
     textRenderer.setFont(&Font14);
 
-    // Build indicator string: "Chapter X/Y - Z%"
+    // Build indicator string: "ChapterName - Z%" or just "Z%" if no chapter name
     String indicator;
-    if (provider->hasChapters()) {
-      int currentChapter = provider->getCurrentChapter() + 1;  // 1-based for display
-      int chapterCount = provider->getChapterCount();
-      indicator = String(currentChapter) + "/" + String(chapterCount) + " - ";
+    String chapterName = provider->getCurrentChapterName();
+    if (!chapterName.isEmpty()) {
+      indicator = chapterName + " - ";
     }
     indicator += String((int)(pagePercentage * 100)) + "%";
 
@@ -304,8 +308,8 @@ void TextViewerScreen::nextPage() {
   if (!provider)
     return;
 
-  // Check if there are more words in current chapter
-  if (provider->getPercentage(pageEndIndex) < 1.0f) {
+  // Check if there are more words in current chapter (use chapter percentage, not book percentage)
+  if (provider->getChapterPercentage(pageEndIndex) < 1.0f) {
     provider->setPosition(pageEndIndex);
     showPage();
   } else {
@@ -371,20 +375,22 @@ void TextViewerScreen::jumpToNextChapter() {
       pageStartIndex = 0;
       pageEndIndex = 0;
       showPage();
+      return;
     } else {
       // At last chapter - go to end of chapter
       provider->setPosition(0x7FFFFFFF);
       pageStartIndex = provider->getCurrentIndex();
-      pageEndIndex = pageStartIndex;
-      showPage();
     }
   } else {
     // No chapters - go to end of document
     provider->setPosition(0x7FFFFFFF);
     pageStartIndex = provider->getCurrentIndex();
-    pageEndIndex = pageStartIndex;
-    showPage();
   }
+
+  // Find where the previous page starts
+  pageStartIndex = layoutStrategy->getPreviousPageStart(*provider, textRenderer, layoutConfig, pageStartIndex);
+  provider->setPosition(pageStartIndex);
+  showPage();
 }
 
 void TextViewerScreen::jumpToPreviousChapter() {

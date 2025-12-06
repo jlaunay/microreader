@@ -25,6 +25,15 @@ class WordProvider {
   virtual float getPercentage() = 0;
   virtual float getPercentage(int index) = 0;
 
+  // Returns the current chapter progress as a percentage (0.0 to 1.0)
+  // For single-file providers, this is the same as getPercentage()
+  virtual float getChapterPercentage() {
+    return getPercentage();
+  }
+  virtual float getChapterPercentage(int index) {
+    return getPercentage(index);
+  }
+
   // Sets the reading position to the given index in the text
   virtual void setPosition(int index) = 0;
 
@@ -65,6 +74,11 @@ class WordProvider {
   // Returns true if the provider supports multiple chapters
   virtual bool hasChapters() {
     return false;
+  }
+
+  // Returns the name/title of the current chapter (empty string if not available)
+  virtual String getCurrentChapterName() {
+    return String("");
   }
 };
 

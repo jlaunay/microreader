@@ -13,6 +13,12 @@ struct SpineItem {
   String href;
 };
 
+struct TocItem {
+  String title;   // Chapter/section title (e.g., "Chapter 1", "Introduction")
+  String href;    // XHTML filename (e.g., "chapter1.xhtml")
+  String anchor;  // Optional anchor within file (e.g., "section-1")
+};
+
 /**
  * EpubReader - Handles EPUB file operations including extraction and caching
  *
@@ -45,6 +51,15 @@ class EpubReader {
     }
     return nullptr;
   }
+  int getTocCount() const {
+    return tocCount_;
+  }
+  const TocItem* getTocItem(int index) const {
+    if (index >= 0 && index < tocCount_) {
+      return &toc_[index];
+    }
+    return nullptr;
+  }
 
   /**
    * Get a file from the EPUB - either from cache or extract it first
@@ -52,6 +67,42 @@ class EpubReader {
    * Returns empty string if file not found or extraction failed
    */
   String getFile(const char* filename);
+
+  /**
+   * Get the chapter/section name for a given spine index
+   * Looks up the spine item's href in the TOC and returns the title
+   * Returns empty string if no matching TOC entry found
+   */
+  String getChapterNameForSpine(int spineIndex) const;
+
+  /**
+   * Get the uncompressed file size for a spine item
+   * Returns 0 if index is out of bounds
+   */
+  size_t getSpineItemSize(int spineIndex) const {
+    if (spineIndex >= 0 && spineIndex < spineCount_) {
+      return spineSizes_[spineIndex];
+    }
+    return 0;
+  }
+
+  /**
+   * Get the cumulative offset (sum of all previous spine items' sizes)
+   * Returns 0 for index 0, or if index is out of bounds
+   */
+  size_t getSpineItemOffset(int spineIndex) const {
+    if (spineIndex >= 0 && spineIndex < spineCount_) {
+      return spineOffsets_[spineIndex];
+    }
+    return 0;
+  }
+
+  /**
+   * Get the total size of all spine items combined
+   */
+  size_t getTotalBookSize() const {
+    return totalBookSize_;
+  }
 
  private:
   bool openEpub();
@@ -62,16 +113,24 @@ class EpubReader {
   bool extractFile(const char* filename);
   bool parseContainer();
   bool parseContentOpf();
+  bool parseTocNcx();
 
   String epubPath_;
   String extractDir_;
   String contentOpfPath_;
+  String tocNcxPath_;  // Path to toc.ncx file
   bool valid_;
 
   epub_reader* reader_;
 
   SpineItem* spine_;
   int spineCount_ = 0;
+  size_t* spineSizes_ = nullptr;    // Uncompressed size of each spine item
+  size_t* spineOffsets_ = nullptr;  // Cumulative offset for each spine item
+  size_t totalBookSize_ = 0;        // Total size of all spine items
+
+  TocItem* toc_;
+  int tocCount_ = 0;
 };
 
 #endif

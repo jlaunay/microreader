@@ -43,7 +43,13 @@ static int extract_to_file_callback(const void* data, size_t size, void* user_da
 }
 
 EpubReader::EpubReader(const char* epubPath)
-    : epubPath_(epubPath), valid_(false), reader_(nullptr), spine_(nullptr), spineCount_(0) {
+    : epubPath_(epubPath),
+      valid_(false),
+      reader_(nullptr),
+      spine_(nullptr),
+      spineCount_(0),
+      toc_(nullptr),
+      tocCount_(0) {
   Serial.printf("\n=== EpubReader: Opening %s ===\n", epubPath);
 
   // Verify file exists
@@ -93,6 +99,15 @@ EpubReader::EpubReader(const char* epubPath)
     return;
   }
 
+  // Parse toc.ncx to get table of contents (optional - don't fail if missing)
+  if (!tocNcxPath_.isEmpty()) {
+    if (!parseTocNcx()) {
+      Serial.println("WARNING: Failed to parse toc.ncx - TOC will be unavailable");
+    }
+  } else {
+    Serial.println("INFO: No toc.ncx found in this EPUB");
+  }
+
   valid_ = true;
   Serial.println("EpubReader initialized successfully\n");
 }
@@ -102,6 +117,18 @@ EpubReader::~EpubReader() {
   if (spine_) {
     delete[] spine_;
     spine_ = nullptr;
+  }
+  if (spineSizes_) {
+    delete[] spineSizes_;
+    spineSizes_ = nullptr;
+  }
+  if (spineOffsets_) {
+    delete[] spineOffsets_;
+    spineOffsets_ = nullptr;
+  }
+  if (toc_) {
+    delete[] toc_;
+    toc_ = nullptr;
   }
   Serial.println("EpubReader destroyed");
 }
@@ -247,6 +274,25 @@ String EpubReader::getFile(const char* filename) {
   return getExtractedPath(filename);
 }
 
+String EpubReader::getChapterNameForSpine(int spineIndex) const {
+  // Get the spine item
+  const SpineItem* spineItem = getSpineItem(spineIndex);
+  if (spineItem == nullptr) {
+    return String("");
+  }
+
+  // Search TOC for matching href
+  // The spine href and TOC href should match (both are relative to content.opf)
+  for (int i = 0; i < tocCount_; i++) {
+    if (toc_[i].href == spineItem->href) {
+      return toc_[i].title;
+    }
+  }
+
+  // No exact match found - return empty string
+  return String("");
+}
+
 bool EpubReader::parseContainer() {
   // Get container.xml (will extract if needed)
   // Check if file is already extracted
@@ -329,8 +375,6 @@ bool EpubReader::parseContentOpf() {
     return false;
   }
 
-  Serial.println("\n=== Parsing Manifest ===");
-
   // Step 1: Build a map of manifest items (id -> href)
   // We'll use a simple array approach since we have limited items
   struct ManifestItem {
@@ -356,13 +400,34 @@ bool EpubReader::parseContentOpf() {
 
   Serial.printf("Found %d manifest items\\n", manifestCount);
 
-  // Step 2: Parse spine to get ordered list of idrefs
-  Serial.println("\\n=== Parsing Spine ===");
-
   // Close and reopen to start from beginning
   parser->close();
   if (!parser->open(opfPath.c_str())) {
     Serial.println("ERROR: Failed to reopen content.opf for spine parsing");
+    delete parser;
+    delete[] manifest;
+    return false;
+  }
+
+  // Find <spine> element and get toc attribute (references toc.ncx in manifest)
+  if (findNextElement(parser, "spine")) {
+    String tocId = parser->getAttribute("toc");
+    if (!tocId.isEmpty()) {
+      // Look up the toc.ncx href in manifest
+      for (int i = 0; i < manifestCount; i++) {
+        if (manifest[i].id == tocId) {
+          tocNcxPath_ = manifest[i].href;
+          Serial.printf("Found toc.ncx reference: %s\n", tocNcxPath_.c_str());
+          break;
+        }
+      }
+    }
+  }
+
+  // Close and reopen to find spine items (itemref elements)
+  parser->close();
+  if (!parser->open(opfPath.c_str())) {
+    Serial.println("ERROR: Failed to reopen content.opf for itemref parsing");
     delete parser;
     delete[] manifest;
     return false;
@@ -402,7 +467,6 @@ bool EpubReader::parseContentOpf() {
 
         tempSpine[spineCount_].idref = idref;
         tempSpine[spineCount_].href = href;
-        Serial.printf("  [%d] %s -> %s\n", spineCount_, idref.c_str(), href.c_str());
         spineCount_++;
       } else {
         Serial.printf("WARNING: No manifest entry for idref: %s\n", idref.c_str());
@@ -422,6 +486,226 @@ bool EpubReader::parseContentOpf() {
   parser->close();
   delete parser;
 
-  Serial.printf("\nSpine parsed successfully: %d items\n", spineCount_);
+  // Calculate spine item sizes for book-wide percentage calculation
+  spineSizes_ = new size_t[spineCount_];
+  spineOffsets_ = new size_t[spineCount_];
+  totalBookSize_ = 0;
+
+  // We need the EPUB open to get file sizes
+  if (openEpub()) {
+    // Get the base directory for content.opf (hrefs are relative to this)
+    String baseDir = "";
+    int lastSlash = contentOpfPath_.lastIndexOf('/');
+    if (lastSlash >= 0) {
+      baseDir = contentOpfPath_.substring(0, lastSlash + 1);
+    }
+
+    for (int i = 0; i < spineCount_; i++) {
+      spineOffsets_[i] = totalBookSize_;
+
+      // Build full path for this spine item
+      String fullPath = baseDir + spine_[i].href;
+
+      // Find the file in the EPUB and get its uncompressed size
+      uint32_t fileIndex;
+      epub_error err = epub_locate_file(reader_, fullPath.c_str(), &fileIndex);
+      if (err == EPUB_OK) {
+        epub_file_info info;
+        err = epub_get_file_info(reader_, fileIndex, &info);
+        if (err == EPUB_OK) {
+          spineSizes_[i] = info.uncompressed_size;
+          totalBookSize_ += info.uncompressed_size;
+        } else {
+          spineSizes_[i] = 0;
+          Serial.printf("WARNING: Could not get file info for %s\n", fullPath.c_str());
+        }
+      } else {
+        spineSizes_[i] = 0;
+        Serial.printf("WARNING: Could not locate %s in EPUB\n", fullPath.c_str());
+      }
+    }
+    closeEpub();
+  }
+
+  Serial.printf("\nSpine parsed successfully: %d items, total size: %u bytes\n", spineCount_, totalBookSize_);
+  return true;
+}
+
+bool EpubReader::parseTocNcx() {
+  // The toc.ncx path is relative to the content.opf location
+  // We need to combine the content.opf directory with the toc.ncx path
+  String tocPath = tocNcxPath_;
+
+  // If content.opf is in a subdirectory, toc.ncx is likely there too
+  int lastSlash = contentOpfPath_.lastIndexOf('/');
+  if (lastSlash > 0) {
+    String opfDir = contentOpfPath_.substring(0, lastSlash + 1);
+    tocPath = opfDir + tocNcxPath_;
+  }
+
+  String extractedTocPath;
+  if (isFileExtracted(tocPath.c_str())) {
+    extractedTocPath = getExtractedPath(tocPath.c_str());
+  } else {
+    if (!extractFile(tocPath.c_str())) {
+      Serial.printf("ERROR: Failed to extract toc.ncx: %s\n", tocPath.c_str());
+      return false;
+    }
+    extractedTocPath = getExtractedPath(tocPath.c_str());
+  }
+
+  if (extractedTocPath.isEmpty()) {
+    Serial.println("ERROR: Failed to get toc.ncx path");
+    return false;
+  }
+
+  Serial.printf("Parsing toc.ncx: %s\n", extractedTocPath.c_str());
+
+  SimpleXmlParser* parser = new SimpleXmlParser();
+  if (!parser->open(extractedTocPath.c_str())) {
+    Serial.println("ERROR: Failed to open toc.ncx for parsing");
+    delete parser;
+    return false;
+  }
+
+  // Use a temporary list to collect TOC items
+  const int INITIAL_CAPACITY = 50;
+  int capacity = INITIAL_CAPACITY;
+  TocItem* tempToc = new TocItem[capacity];
+  tocCount_ = 0;
+
+  // Parse <navPoint> elements using a simpler approach:
+  // For each navPoint, find its direct navLabel/text and content elements
+  // Structure: <navPoint><navLabel><text>Title</text></navLabel><content src="file.xhtml#anchor"/></navPoint>
+
+  String currentTitle = "";
+  String currentSrc = "";
+  bool inNavPoint = false;
+  bool inNavLabel = false;
+  bool expectingText = false;
+
+  while (parser->read()) {
+    SimpleXmlParser::NodeType nodeType = parser->getNodeType();
+    String name = parser->getName();
+
+    if (nodeType == SimpleXmlParser::Element) {
+      if (strcasecmp_helper(name, "navPoint")) {
+        // Starting a new navPoint - save previous one if we have data
+        if (!currentTitle.isEmpty() && !currentSrc.isEmpty()) {
+          // Grow array if needed
+          if (tocCount_ >= capacity) {
+            capacity *= 2;
+            TocItem* newToc = new TocItem[capacity];
+            for (int i = 0; i < tocCount_; i++) {
+              newToc[i].title = tempToc[i].title;
+              newToc[i].href = tempToc[i].href;
+              newToc[i].anchor = tempToc[i].anchor;
+            }
+            delete[] tempToc;
+            tempToc = newToc;
+          }
+
+          // Parse src into href and anchor
+          int hashPos = currentSrc.indexOf('#');
+          if (hashPos >= 0) {
+            tempToc[tocCount_].href = currentSrc.substring(0, hashPos);
+            tempToc[tocCount_].anchor = currentSrc.substring(hashPos + 1);
+          } else {
+            tempToc[tocCount_].href = currentSrc;
+            tempToc[tocCount_].anchor = "";
+          }
+          tempToc[tocCount_].title = currentTitle;
+          tocCount_++;
+        }
+
+        // Reset for new navPoint
+        currentTitle = "";
+        currentSrc = "";
+        inNavPoint = true;
+      } else if (strcasecmp_helper(name, "navLabel")) {
+        inNavLabel = true;
+      } else if (strcasecmp_helper(name, "text") && inNavLabel) {
+        expectingText = true;
+      } else if (strcasecmp_helper(name, "content") && inNavPoint) {
+        // Only capture content if we don't have one yet for this navPoint
+        if (currentSrc.isEmpty()) {
+          currentSrc = parser->getAttribute("src");
+        }
+      }
+    } else if (nodeType == SimpleXmlParser::Text && expectingText) {
+      // Read the title text - only if we don't have one yet
+      if (currentTitle.isEmpty()) {
+        currentTitle = "";
+        while (parser->hasMoreTextChars()) {
+          char c = parser->readTextNodeCharForward();
+          if (c != '\0') {
+            currentTitle += c;
+          }
+        }
+      }
+      expectingText = false;
+    } else if (nodeType == SimpleXmlParser::EndElement) {
+      if (strcasecmp_helper(name, "navLabel")) {
+        inNavLabel = false;
+      } else if (strcasecmp_helper(name, "text")) {
+        expectingText = false;
+      }
+    }
+  }
+
+  // Don't forget the last navPoint
+  if (!currentTitle.isEmpty() && !currentSrc.isEmpty()) {
+    if (tocCount_ >= capacity) {
+      capacity *= 2;
+      TocItem* newToc = new TocItem[capacity];
+      for (int i = 0; i < tocCount_; i++) {
+        newToc[i].title = tempToc[i].title;
+        newToc[i].href = tempToc[i].href;
+        newToc[i].anchor = tempToc[i].anchor;
+      }
+      delete[] tempToc;
+      tempToc = newToc;
+    }
+
+    int hashPos = currentSrc.indexOf('#');
+    if (hashPos >= 0) {
+      tempToc[tocCount_].href = currentSrc.substring(0, hashPos);
+      tempToc[tocCount_].anchor = currentSrc.substring(hashPos + 1);
+    } else {
+      tempToc[tocCount_].href = currentSrc;
+      tempToc[tocCount_].anchor = "";
+    }
+    tempToc[tocCount_].title = currentTitle;
+    tocCount_++;
+  }
+
+  // Allocate final TOC array with exact size
+  if (tocCount_ > 0) {
+    toc_ = new TocItem[tocCount_];
+    for (int i = 0; i < tocCount_; i++) {
+      toc_[i].title = tempToc[i].title;
+      toc_[i].href = tempToc[i].href;
+      toc_[i].anchor = tempToc[i].anchor;
+    }
+  }
+  delete[] tempToc;
+
+  parser->close();
+  delete parser;
+
+  Serial.printf("TOC parsed successfully: %d chapters/sections\n", tocCount_);
+
+  // Print TOC summary
+  for (int i = 0; i < tocCount_ && i < 10; i++) {
+    Serial.printf("  [%d] %s -> %s", i, toc_[i].title.c_str(), toc_[i].href.c_str());
+    if (!toc_[i].anchor.isEmpty()) {
+      Serial.printf("#%s", toc_[i].anchor.c_str());
+    }
+    Serial.println();
+  }
+  if (tocCount_ > 10) {
+    Serial.printf("  ... and %d more entries\n", tocCount_ - 10);
+  }
+
   return true;
 }
