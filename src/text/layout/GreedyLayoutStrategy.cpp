@@ -22,7 +22,6 @@ LayoutStrategy::PageLayout GreedyLayoutStrategy::layoutText(WordProvider& provid
   const int16_t x = config.marginLeft;
   int16_t y = config.marginTop;
   const int16_t maxY = config.pageHeight - config.marginBottom;
-  const TextAlignment alignment = config.alignment;
 
   // Measure space width using renderer
   renderer.getTextBounds(" ", 0, 0, nullptr, nullptr, &spaceWidth_, nullptr);
@@ -32,32 +31,33 @@ LayoutStrategy::PageLayout GreedyLayoutStrategy::layoutText(WordProvider& provid
 
   while (y < maxY) {
     bool isParagraphEnd = false;
-    std::vector<LayoutStrategy::Word> line = getNextLine(provider, renderer, maxWidth, isParagraphEnd);
+    // getNextLine uses config.alignment as default, CSS overrides if present
+    Line line = getNextLine(provider, renderer, maxWidth, isParagraphEnd, config.alignment);
 
     // Calculate positions for each word in the line
-    if (!line.empty()) {
+    if (!line.words.empty()) {
       // Calculate line width
       int16_t lineWidth = 0;
-      for (size_t i = 0; i < line.size(); i++) {
-        lineWidth += line[i].width;
-        if (i < line.size() - 1) {
+      for (size_t i = 0; i < line.words.size(); i++) {
+        lineWidth += line.words[i].width;
+        if (i < line.words.size() - 1) {
           lineWidth += spaceWidth_;
         }
       }
 
       int16_t xPos = x;
-      if (alignment == ALIGN_CENTER) {
+      if (line.alignment == ALIGN_CENTER) {
         xPos = x + (maxWidth - lineWidth) / 2;
-      } else if (alignment == ALIGN_RIGHT) {
+      } else if (line.alignment == ALIGN_RIGHT) {
         xPos = x + maxWidth - lineWidth;
       }
 
       int16_t currentX = xPos;
-      for (size_t i = 0; i < line.size(); i++) {
-        line[i].x = currentX;
-        line[i].y = y;
-        currentX += line[i].width;
-        if (i < line.size() - 1) {
+      for (size_t i = 0; i < line.words.size(); i++) {
+        line.words[i].x = currentX;
+        line.words[i].y = y;
+        currentX += line.words[i].width;
+        if (i < line.words.size() - 1) {
           currentX += spaceWidth_;
         }
       }
@@ -76,14 +76,14 @@ LayoutStrategy::PageLayout GreedyLayoutStrategy::layoutText(WordProvider& provid
 
 void GreedyLayoutStrategy::renderPage(const PageLayout& layout, TextRenderer& renderer, const LayoutConfig& config) {
   for (const auto& line : layout.lines) {
-    for (const auto& word : line) {
+    for (const auto& word : line.words) {
       renderer.setCursor(word.x, word.y);
       renderer.print(word.text);
     }
   }
 }
 
-std::vector<LayoutStrategy::Word> GreedyLayoutStrategy::test_getNextLine(WordProvider& provider, TextRenderer& renderer,
-                                                                         int16_t maxWidth, bool& isParagraphEnd) {
-  return getNextLine(provider, renderer, maxWidth, isParagraphEnd);
+LayoutStrategy::Line GreedyLayoutStrategy::test_getNextLine(WordProvider& provider, TextRenderer& renderer,
+                                                            int16_t maxWidth, bool& isParagraphEnd) {
+  return getNextLine(provider, renderer, maxWidth, isParagraphEnd, ALIGN_LEFT);
 }

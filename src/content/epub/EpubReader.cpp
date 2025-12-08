@@ -108,8 +108,17 @@ EpubReader::EpubReader(const char* epubPath)
     Serial.println("INFO: No toc.ncx found in this EPUB");
   }
 
+  // Parse CSS files for styling information (optional - don't fail if missing)
+  if (!cssFiles_.empty()) {
+    if (!parseCssFiles()) {
+      Serial.println("WARNING: Failed to parse CSS files - styles will be unavailable");
+    }
+  } else {
+    Serial.println("INFO: No CSS files found in this EPUB");
+  }
+
   valid_ = true;
-  Serial.println("EpubReader initialized successfully\n");
+  Serial.println("EpubReader initialized successfully\\n");
 }
 
 EpubReader::~EpubReader() {
@@ -129,6 +138,10 @@ EpubReader::~EpubReader() {
   if (toc_) {
     delete[] toc_;
     toc_ = nullptr;
+  }
+  if (cssParser_) {
+    delete cssParser_;
+    cssParser_ = nullptr;
   }
   Serial.println("EpubReader destroyed");
 }
@@ -407,26 +420,30 @@ bool EpubReader::parseContentOpf() {
     String href;
   };
 
-  // Count XHTML items first
+  // Count XHTML and CSS items first
   if (!parser->open(opfPath.c_str())) {
     delete parser;
     return false;
   }
 
   int xhtmlCount = 0;
+  int cssCount = 0;
   while (findNextElement(parser, "item")) {
     String mediaType = parser->getAttribute("media-type");
     if (mediaType.indexOf("xhtml") >= 0 || mediaType.indexOf("html") >= 0) {
       xhtmlCount++;
+    } else if (mediaType.indexOf("css") >= 0) {
+      cssCount++;
     }
   }
   parser->close();
 
-  Serial.printf("Found %d XHTML manifest items\n", xhtmlCount);
+  Serial.printf("Found %d XHTML manifest items, %d CSS files\\n", xhtmlCount, cssCount);
 
-  // Allocate and collect XHTML manifest items
+  // Allocate and collect XHTML manifest items and CSS files
   ManifestItem* manifest = new ManifestItem[xhtmlCount];
   int manifestCount = 0;
+  cssFiles_.reserve(cssCount);
 
   if (!parser->open(opfPath.c_str())) {
     delete parser;
@@ -434,12 +451,20 @@ bool EpubReader::parseContentOpf() {
     return false;
   }
 
-  while (findNextElement(parser, "item") && manifestCount < xhtmlCount) {
+  while (findNextElement(parser, "item")) {
     String mediaType = parser->getAttribute("media-type");
     if (mediaType.indexOf("xhtml") >= 0 || mediaType.indexOf("html") >= 0) {
-      manifest[manifestCount].id = parser->getAttribute("id");
-      manifest[manifestCount].href = parser->getAttribute("href");
-      manifestCount++;
+      if (manifestCount < xhtmlCount) {
+        manifest[manifestCount].id = parser->getAttribute("id");
+        manifest[manifestCount].href = parser->getAttribute("href");
+        manifestCount++;
+      }
+    } else if (mediaType.indexOf("css") >= 0) {
+      String href = parser->getAttribute("href");
+      if (!href.isEmpty()) {
+        cssFiles_.push_back(href);
+        Serial.printf("Found CSS file: %s\\n", href.c_str());
+      }
     }
   }
   parser->close();
@@ -723,4 +748,48 @@ bool EpubReader::parseTocNcx() {
   }
 
   return true;
+}
+
+bool EpubReader::parseCssFiles() {
+  if (cssFiles_.empty()) {
+    return true;  // Nothing to parse
+  }
+
+  // Create CSS parser
+  cssParser_ = new CssParser();
+
+  // Get base directory of content.opf (CSS paths are relative to this)
+  String baseDir = "";
+  int lastSlash = contentOpfPath_.lastIndexOf('/');
+  if (lastSlash >= 0) {
+    baseDir = contentOpfPath_.substring(0, lastSlash + 1);
+  }
+
+  int successCount = 0;
+  for (size_t i = 0; i < cssFiles_.size(); i++) {
+    // Build full path relative to EPUB root
+    String fullPath = baseDir + cssFiles_[i];
+
+    // Extract CSS file if needed
+    String extractedPath;
+    if (isFileExtracted(fullPath.c_str())) {
+      extractedPath = getExtractedPath(fullPath.c_str());
+    } else {
+      if (!extractFile(fullPath.c_str())) {
+        Serial.printf("WARNING: Failed to extract CSS file: %s\n", fullPath.c_str());
+        continue;
+      }
+      extractedPath = getExtractedPath(fullPath.c_str());
+    }
+
+    // Parse the CSS file
+    if (cssParser_->parseFile(extractedPath.c_str())) {
+      successCount++;
+    }
+  }
+
+  Serial.printf("CSS parsing complete: %d/%d files parsed, %d rules loaded\n", successCount, cssFiles_.size(),
+                cssParser_->getStyleCount());
+
+  return successCount > 0;
 }

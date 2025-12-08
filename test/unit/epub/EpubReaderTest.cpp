@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "content/css/CssParser.h"
 #include "content/epub/EpubReader.h"
 #include "test_config.h"
 #include "test_utils.h"
@@ -31,6 +32,7 @@
 #define TEST_TOC_CONTENT true
 #define TEST_CHAPTER_NAME_FOR_SPINE true
 #define TEST_SPINE_SIZES true
+#define TEST_CSS_PARSING true
 
 // Test configuration
 namespace EpubReaderTests {
@@ -486,6 +488,158 @@ void testSpineSizes(TestUtils::TestRunner& runner, EpubReader& reader) {
   std::cout << "  Spine sizes test passed\n";
 }
 
+/**
+ * Test: CSS parsing from EPUB
+ */
+void testCssParsing(TestUtils::TestRunner& runner, EpubReader& reader) {
+  std::cout << "\n=== Test: CSS Parsing ===\n";
+
+  if (!reader.isValid()) {
+    runner.expectTrue(false, "EPUB should be valid (skipping test)");
+    return;
+  }
+
+  const CssParser* cssParser = reader.getCssParser();
+
+  // CSS parser should exist (may be empty if no CSS files)
+  if (cssParser == nullptr) {
+    std::cout << "  No CSS parser available (EPUB may not have CSS files)\n";
+    // This is not necessarily a failure - some EPUBs don't have CSS
+    return;
+  }
+
+  std::cout << "  CSS parser available\n";
+  std::cout << "  Style count: " << cssParser->getStyleCount() << "\n";
+
+  runner.expectTrue(cssParser->hasStyles(), "CSS parser should have loaded some styles");
+
+  // Test getting style for a known class (from Bobiverse 1.epub)
+  // The CSS has classes like "_0a_GS" with text-align: justify
+  const CssStyle* style = cssParser->getStyleForClass("_0a_GS");
+  if (style != nullptr) {
+    std::cout << "  Found style for class '_0a_GS'\n";
+    std::cout << "    hasTextAlign: " << (style->hasTextAlign ? "true" : "false") << "\n";
+    if (style->hasTextAlign) {
+      const char* alignStr = "unknown";
+      switch (style->textAlign) {
+        case TextAlign::Left:
+          alignStr = "left";
+          break;
+        case TextAlign::Right:
+          alignStr = "right";
+          break;
+        case TextAlign::Center:
+          alignStr = "center";
+          break;
+        case TextAlign::Justify:
+          alignStr = "justify";
+          break;
+      }
+      std::cout << "    textAlign: " << alignStr << "\n";
+      runner.expectTrue(style->textAlign == TextAlign::Justify, "Class _0a_GS should have text-align: justify");
+    }
+  } else {
+    std::cout << "  Style for class '_0a_GS' not found\n";
+  }
+
+  // Test combining multiple classes
+  CssStyle combinedStyle = cssParser->getCombinedStyle("_0a_GS CharOverride-1");
+  std::cout << "  Combined style for '_0a_GS CharOverride-1':\n";
+  std::cout << "    hasTextAlign: " << (combinedStyle.hasTextAlign ? "true" : "false") << "\n";
+
+  // Test non-existent class
+  const CssStyle* nonExistentStyle = cssParser->getStyleForClass("non_existent_class_xyz");
+  runner.expectTrue(nonExistentStyle == nullptr, "Non-existent class should return nullptr");
+
+  std::cout << "  CSS parsing test passed\n";
+}
+
+/**
+ * Test: Direct CSS string parsing
+ */
+void testCssStringParsing(TestUtils::TestRunner& runner) {
+  std::cout << "\n=== Test: CSS String Parsing ===\n";
+
+  CssParser parser;
+
+  // Test basic CSS parsing
+  String css = R"(
+    .left-align {
+      text-align: left;
+    }
+    .right-align {
+      text-align: right;
+    }
+    .center-align {
+      text-align: center;
+    }
+    .justify-align {
+      text-align: justify;
+    }
+    p.paragraph {
+      text-align: justify;
+      color: black; /* ignored property */
+    }
+    /* Comment should be ignored */
+    .multi, .selector {
+      text-align: center;
+    }
+  )";
+
+  bool parseResult = parser.parseString(css);
+  runner.expectTrue(parseResult, "CSS string should parse successfully");
+
+  std::cout << "  Parsed " << parser.getStyleCount() << " style rules\n";
+
+  // Test left align
+  const CssStyle* leftStyle = parser.getStyleForClass("left-align");
+  runner.expectTrue(leftStyle != nullptr, "left-align class should exist");
+  if (leftStyle) {
+    runner.expectTrue(leftStyle->hasTextAlign, "left-align should have textAlign");
+    runner.expectTrue(leftStyle->textAlign == TextAlign::Left, "left-align should be Left");
+  }
+
+  // Test right align
+  const CssStyle* rightStyle = parser.getStyleForClass("right-align");
+  runner.expectTrue(rightStyle != nullptr, "right-align class should exist");
+  if (rightStyle) {
+    runner.expectTrue(rightStyle->textAlign == TextAlign::Right, "right-align should be Right");
+  }
+
+  // Test center align
+  const CssStyle* centerStyle = parser.getStyleForClass("center-align");
+  runner.expectTrue(centerStyle != nullptr, "center-align class should exist");
+  if (centerStyle) {
+    runner.expectTrue(centerStyle->textAlign == TextAlign::Center, "center-align should be Center");
+  }
+
+  // Test justify align
+  const CssStyle* justifyStyle = parser.getStyleForClass("justify-align");
+  runner.expectTrue(justifyStyle != nullptr, "justify-align class should exist");
+  if (justifyStyle) {
+    runner.expectTrue(justifyStyle->textAlign == TextAlign::Justify, "justify-align should be Justify");
+  }
+
+  // Test element.class selector
+  const CssStyle* paragraphStyle = parser.getStyleForClass("paragraph");
+  runner.expectTrue(paragraphStyle != nullptr, "paragraph class should exist");
+  if (paragraphStyle) {
+    runner.expectTrue(paragraphStyle->textAlign == TextAlign::Justify, "paragraph should be Justify");
+  }
+
+  // Test multiple selectors
+  const CssStyle* multiStyle = parser.getStyleForClass("multi");
+  const CssStyle* selectorStyle = parser.getStyleForClass("selector");
+  runner.expectTrue(multiStyle != nullptr, "multi class should exist");
+  runner.expectTrue(selectorStyle != nullptr, "selector class should exist");
+  if (multiStyle && selectorStyle) {
+    runner.expectTrue(multiStyle->textAlign == TextAlign::Center, "multi should be Center");
+    runner.expectTrue(selectorStyle->textAlign == TextAlign::Center, "selector should be Center");
+  }
+
+  std::cout << "  CSS string parsing test passed\n";
+}
+
 }  // namespace EpubReaderTests
 
 // ============================================================================
@@ -544,6 +698,11 @@ int main() {
 
 #if TEST_SPINE_SIZES
   EpubReaderTests::testSpineSizes(runner, reader);
+#endif
+
+#if TEST_CSS_PARSING
+  EpubReaderTests::testCssStringParsing(runner);    // Test CSS parser directly first
+  EpubReaderTests::testCssParsing(runner, reader);  // Then test with EPUB
 #endif
 
   return runner.allPassed() ? 0 : 1;

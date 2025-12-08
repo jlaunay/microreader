@@ -1,5 +1,6 @@
 #include "LayoutStrategy.h"
 
+#include "../../content/css/CssStyle.h"
 #include "../../content/providers/WordProvider.h"
 #include "../../rendering/TextRenderer.h"
 #include "../hyphenation/GermanHyphenation.h"
@@ -25,16 +26,45 @@ void LayoutStrategy::setLanguage(Language language) {
   hyphenationStrategy_ = createHyphenationStrategy(language);
 }
 
-std::vector<LayoutStrategy::Word> LayoutStrategy::getNextLine(WordProvider& provider, TextRenderer& renderer,
-                                                              int16_t maxWidth, bool& isParagraphEnd) {
+LayoutStrategy::Line LayoutStrategy::getNextLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth,
+                                                 bool& isParagraphEnd, TextAlignment defaultAlignment) {
   isParagraphEnd = false;
 
-  std::vector<LayoutStrategy::Word> line;
+  Line result;
+  result.alignment = defaultAlignment;  // Use config default
+  bool alignmentCaptured = false;
+
   int16_t currentWidth = 0;
 
   while (provider.hasNextWord()) {
     int wordStartIndex = provider.getCurrentIndex();
     String text = provider.getNextWord();
+
+    // Capture alignment after reading the first word (style is now pushed)
+    // CSS alignment overrides the default
+    if (!alignmentCaptured) {
+      alignmentCaptured = true;
+      if (provider.hasStyleSupport()) {
+        CssStyle style = provider.getCurrentStyle();
+        if (style.hasTextAlign) {
+          switch (style.textAlign) {
+            case TextAlign::Center:
+              result.alignment = ALIGN_CENTER;
+              break;
+            case TextAlign::Right:
+              result.alignment = ALIGN_RIGHT;
+              break;
+            case TextAlign::Left:
+              result.alignment = ALIGN_LEFT;
+              break;
+            default:
+              // Keep defaultAlignment for Justify or unknown
+              break;
+          }
+        }
+      }
+    }
+
     int16_t bx = 0, by = 0;
     uint16_t bw = 0, bh = 0;
     renderer.getTextBounds(text.c_str(), 0, 0, &bx, &by, &bw, &bh);
@@ -73,7 +103,7 @@ std::vector<LayoutStrategy::Word> LayoutStrategy::getNextLine(WordProvider& prov
         int16_t bx2 = 0, by2 = 0;
         uint16_t bw2 = 0, bh2 = 0;
         renderer.getTextBounds(firstPart.c_str(), 0, 0, &bx2, &by2, &bw2, &bh2);
-        line.push_back({firstPart, static_cast<int16_t>(bw2), 0, 0, true});  // wasSplit = true
+        result.words.push_back({firstPart, static_cast<int16_t>(bw2), 0, 0, true});  // wasSplit = true
 
         // Move provider position: consume characters up to the split point
         // For existing hyphens, include the hyphen character (+1)
@@ -87,25 +117,26 @@ std::vector<LayoutStrategy::Word> LayoutStrategy::getNextLine(WordProvider& prov
       }
     } else {
       // Word fits, add to line
-      line.push_back(word);
+      result.words.push_back(word);
       currentWidth += spaceNeeded;
     }
   }
 
   // // output the words in the line
-  // for (size_t i = 0; i < line.size(); i++) {
-  //   Serial.printf(line[i].text.c_str());
+  // for (size_t i = 0; i < result.words.size(); i++) {
+  //   Serial.printf(result.words[i].text.c_str());
   //   Serial.print(";");
   // }
   // Serial.println();
 
-  return line;
+  return result;
 }
 
-std::vector<LayoutStrategy::Word> LayoutStrategy::getPrevLine(WordProvider& provider, TextRenderer& renderer,
-                                                              int16_t maxWidth, bool& isParagraphEnd) {
+LayoutStrategy::Line LayoutStrategy::getPrevLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth,
+                                                 bool& isParagraphEnd, TextAlignment defaultAlignment) {
   isParagraphEnd = false;
-  std::vector<LayoutStrategy::Word> line;
+  Line result;
+  result.alignment = defaultAlignment;  // Use config default for backward navigation
   int16_t currentWidth = 0;
   bool firstWord = true;
 
@@ -161,7 +192,7 @@ std::vector<LayoutStrategy::Word> LayoutStrategy::getPrevLine(WordProvider& prov
         int16_t bx2 = 0, by2 = 0;
         uint16_t bw2 = 0, bh2 = 0;
         renderer.getTextBounds(secondPart.c_str(), 0, 0, &bx2, &by2, &bw2, &bh2);
-        line.insert(line.begin(), {secondPart, static_cast<int16_t>(bw2), 0, 0, false});
+        result.words.insert(result.words.begin(), {secondPart, static_cast<int16_t>(bw2), 0, 0, false});
 
         // Move provider position to the split point by consuming characters from word start
         provider.setPosition(wordStartIndex);
@@ -173,12 +204,12 @@ std::vector<LayoutStrategy::Word> LayoutStrategy::getPrevLine(WordProvider& prov
         break;
       }
     } else {
-      line.insert(line.begin(), word);
+      result.words.insert(result.words.begin(), word);
       currentWidth += spaceNeeded;
     }
   }
 
-  return line;
+  return result;
 }
 
 int LayoutStrategy::getPreviousPageStart(WordProvider& provider, TextRenderer& renderer, const LayoutConfig& config,
@@ -201,7 +232,7 @@ int LayoutStrategy::getPreviousPageStart(WordProvider& provider, TextRenderer& r
     linesBack++;
 
     bool isParagraphEnd;
-    std::vector<LayoutStrategy::Word> line = getPrevLine(provider, renderer, maxWidth, isParagraphEnd);
+    Line line = getPrevLine(provider, renderer, maxWidth, isParagraphEnd, config.alignment);
 
     // Stop if we hit a paragraph break and have gone back enough
     if (isParagraphEnd && linesBack >= maxLines * 1.25) {
@@ -217,7 +248,7 @@ int LayoutStrategy::getPreviousPageStart(WordProvider& provider, TextRenderer& r
   while (provider.getCurrentIndex() < currentStartPosition && provider.hasNextWord()) {
     int lineStart = provider.getCurrentIndex();
     bool isParagraphEnd;
-    std::vector<LayoutStrategy::Word> line = getNextLine(provider, renderer, maxWidth, isParagraphEnd);
+    Line line = getNextLine(provider, renderer, maxWidth, isParagraphEnd, config.alignment);
 
     linesBack--;
 
@@ -333,15 +364,14 @@ LayoutStrategy::HyphenSplit LayoutStrategy::findBestHyphenSplitBackward(const St
   return result;
 }
 
-std::vector<LayoutStrategy::Word> LayoutStrategy::test_getPrevLine(WordProvider& provider, TextRenderer& renderer,
-                                                                   int16_t maxWidth, bool& isParagraphEnd) {
-  return getPrevLine(provider, renderer, maxWidth, isParagraphEnd);
+LayoutStrategy::Line LayoutStrategy::test_getPrevLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth,
+                                                      bool& isParagraphEnd) {
+  return getPrevLine(provider, renderer, maxWidth, isParagraphEnd, ALIGN_LEFT);
 }
 
-std::vector<LayoutStrategy::Word> LayoutStrategy::test_getNextLineDefault(WordProvider& provider,
-                                                                          TextRenderer& renderer, int16_t maxWidth,
-                                                                          bool& isParagraphEnd) {
-  return getNextLine(provider, renderer, maxWidth, isParagraphEnd);
+LayoutStrategy::Line LayoutStrategy::test_getNextLineDefault(WordProvider& provider, TextRenderer& renderer,
+                                                             int16_t maxWidth, bool& isParagraphEnd) {
+  return getNextLine(provider, renderer, maxWidth, isParagraphEnd, ALIGN_LEFT);
 }
 
 int LayoutStrategy::test_getPreviousPageStart(WordProvider& provider, TextRenderer& renderer,

@@ -4,6 +4,10 @@
 #include <Arduino.h>
 #include <SD.h>
 
+#include <vector>
+
+#include "../css/CssParser.h"
+
 extern "C" {
 #include "epub_parser.h"
 }
@@ -104,6 +108,14 @@ class EpubReader {
     return totalBookSize_;
   }
 
+  /**
+   * Get the CSS parser for style lookups
+   * Returns nullptr if no CSS was loaded
+   */
+  const CssParser* getCssParser() const {
+    return cssParser_;
+  }
+
  private:
   bool openEpub();
   void closeEpub();
@@ -114,6 +126,7 @@ class EpubReader {
   bool parseContainer();
   bool parseContentOpf();
   bool parseTocNcx();
+  bool parseCssFiles();
 
   String epubPath_;
   String extractDir_;
@@ -131,6 +144,9 @@ class EpubReader {
 
   TocItem* toc_;
   int tocCount_ = 0;
+
+  CssParser* cssParser_ = nullptr;
+  std::vector<String> cssFiles_;  // List of CSS file paths (relative to content.opf)
 };
 
 #endif

@@ -38,20 +38,26 @@ LayoutStrategy::PageLayout KnuthPlassLayoutStrategy::layoutText(WordProvider& pr
     int16_t yStart = y;
     int16_t lineCount = 0;
     bool isParagraphEnd = false;
+    TextAlignment paragraphAlignment = config.alignment;  // Will be set by first line
 
     // Collect words for the paragraph
     while (y < maxY && !isParagraphEnd) {
-      std::vector<LayoutStrategy::Word> line = getNextLine(provider, renderer, maxWidth, isParagraphEnd);
+      Line lineResult = getNextLine(provider, renderer, maxWidth, isParagraphEnd, config.alignment);
       y += config.lineHeight;
 
+      // Capture alignment from first line of paragraph
+      if (lineCount == 0 && !lineResult.words.empty()) {
+        paragraphAlignment = lineResult.alignment;
+      }
+
       // Only count lines that have actual content
-      if (!line.empty()) {
+      if (!lineResult.words.empty()) {
         lineCount++;
       }
 
       // iterate line by line until paragraph end
-      for (size_t i = 0; i < line.size(); i++) {
-        words.push_back(line[i]);
+      for (size_t i = 0; i < lineResult.words.size(); i++) {
+        words.push_back(lineResult.words[i]);
       }
     }
 
@@ -67,7 +73,6 @@ LayoutStrategy::PageLayout KnuthPlassLayoutStrategy::layoutText(WordProvider& pr
 
       // Convert breaks into lines and calculate positions
       const int16_t x = config.marginLeft;
-      const TextAlignment alignment = config.alignment;
       int16_t currentY = yStart;
 
       size_t lineStart = 0;
@@ -97,9 +102,9 @@ LayoutStrategy::PageLayout KnuthPlassLayoutStrategy::layoutText(WordProvider& pr
           }
 
           int16_t xPos = x;
-          if (alignment == ALIGN_CENTER) {
+          if (paragraphAlignment == ALIGN_CENTER) {
             xPos = x + (maxWidth - lineWidth) / 2;
-          } else if (alignment == ALIGN_RIGHT) {
+          } else if (paragraphAlignment == ALIGN_RIGHT) {
             xPos = x + maxWidth - lineWidth;
           }
 
@@ -145,7 +150,10 @@ LayoutStrategy::PageLayout KnuthPlassLayoutStrategy::layoutText(WordProvider& pr
           }
         }
 
-        result.lines.push_back(lineWords);
+        Line lineStruct;
+        lineStruct.words = lineWords;
+        lineStruct.alignment = paragraphAlignment;
+        result.lines.push_back(lineStruct);
         lineStart = lineEnd;
         currentY += config.lineHeight;
       }
@@ -164,7 +172,7 @@ LayoutStrategy::PageLayout KnuthPlassLayoutStrategy::layoutText(WordProvider& pr
 void KnuthPlassLayoutStrategy::renderPage(const PageLayout& layout, TextRenderer& renderer,
                                           const LayoutConfig& config) {
   for (const auto& line : layout.lines) {
-    for (const auto& word : line) {
+    for (const auto& word : line.words) {
       renderer.setCursor(word.x, word.y);
       renderer.print(word.text);
     }

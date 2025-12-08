@@ -101,6 +101,37 @@ class String {
     return *this;
   }
 
+  void reserve(size_t size) {
+    s_.reserve(size);
+  }
+
+  void trim() {
+    // Trim leading whitespace
+    size_t start = 0;
+    while (start < s_.size() && (s_[start] == ' ' || s_[start] == '\t' || s_[start] == '\n' || s_[start] == '\r')) {
+      start++;
+    }
+    // Trim trailing whitespace
+    size_t end = s_.size();
+    while (end > start && (s_[end - 1] == ' ' || s_[end - 1] == '\t' || s_[end - 1] == '\n' || s_[end - 1] == '\r')) {
+      end--;
+    }
+    s_ = s_.substr(start, end - start);
+  }
+
+  void toLowerCase() {
+    for (size_t i = 0; i < s_.size(); i++) {
+      if (s_[i] >= 'A' && s_[i] <= 'Z') {
+        s_[i] = s_[i] + 32;
+      }
+    }
+  }
+
+  // Comparison operator for use in std::map
+  bool operator<(const String& other) const {
+    return s_ < other.s_;
+  }
+
  private:
   std::string s_;
 };

@@ -1,7 +1,8 @@
 #ifndef WORD_PROVIDER_H
 #define WORD_PROVIDER_H
 
-#include "WString.h"  // For Arduino `String`
+#include "../css/CssStyle.h"  // For TextAlign and CssStyle
+#include "WString.h"          // For Arduino `String`
 
 class TextRenderer;  // Forward declaration
 
@@ -84,6 +85,17 @@ class WordProvider {
   // Returns the name/title of the current chapter (empty string if not available)
   virtual String getCurrentChapterName() {
     return String("");
+  }
+
+  // Style support - returns the currently active style for styling words
+  // The default implementation returns a default style (left-aligned)
+  virtual CssStyle getCurrentStyle() {
+    return CssStyle();
+  }
+
+  // Check if the provider supports CSS styles
+  virtual bool hasStyleSupport() {
+    return false;
   }
 };
 

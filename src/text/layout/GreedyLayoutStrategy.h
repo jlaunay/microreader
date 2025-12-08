@@ -21,8 +21,7 @@ class GreedyLayoutStrategy : public LayoutStrategy {
  public:
   // Test-only public wrapper to exercise internal line layout helpers from unit tests.
   // Delegates to the strategy-specific getNextLine
-  std::vector<LayoutStrategy::Word> test_getNextLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth,
-                                                     bool& isParagraphEnd);
+  Line test_getNextLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth, bool& isParagraphEnd);
   Paragraph test_layoutParagraph(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth);
 };
 

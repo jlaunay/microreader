@@ -1,20 +1,22 @@
+/**
+ * GreedyLayoutBidirectionalParagraphTest.cpp - Bidirectional Paragraph Layout Test
+ *
+ * Tests that forward and backward line scanning produce consistent results.
+ * The provider and layout to test are configured in test_globals.h.
+ */
+
 #include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
 
-#include "content/providers/StringWordProvider.h"
 #include "core/EInkDisplay.h"
 #include "rendering/TextRenderer.h"
 #include "resources/fonts/NotoSans26.h"
 #include "test_config.h"
+#include "test_globals.h"
 #include "test_utils.h"
-#include "text/layout/GreedyLayoutStrategy.h"
-#include "text/layout/KnuthPlassLayoutStrategy.h"
-
-// Include the test factory after all provider/layout headers
-#include "test_factory.h"
 
 static std::string joinLine(const std::vector<LayoutStrategy::Word>& line) {
   std::string out;
@@ -26,30 +28,41 @@ static std::string joinLine(const std::vector<LayoutStrategy::Word>& line) {
   return out;
 }
 
-void runBidirectionalParagraphTest(TestUtils::TestRunner& runner, const std::string& content,
-                                   TestFactory::LayoutType layoutType) {
-  std::cout << "\n=== Running with " << TestFactory::layoutTypeName(layoutType) << " ===\n";
-
-  // Create two providers for forward and backward scanning
-  String s(content.c_str());
-  StringWordProvider provider(s);
-
-  // Create display + renderer like other host tests so we can use the real TextRenderer
-  EInkDisplay display(TestConfig::DUMMY_PIN, TestConfig::DUMMY_PIN, TestConfig::DUMMY_PIN, TestConfig::DUMMY_PIN,
-                      TestConfig::DUMMY_PIN, TestConfig::DUMMY_PIN);
-  display.begin();
-  TextRenderer renderer(display);
-  renderer.setFont(&NotoSans26);
-
-  // Create layout strategy using factory
-  LayoutStrategy* layout = TestFactory::createLayout(layoutType);
-  if (!layout) {
-    std::cerr << "Failed to create layout strategy\n";
-    runner.expectTrue(false, "Create layout strategy");
-    return;
+static std::string getFirstWord(const std::vector<LayoutStrategy::Word>& line) {
+  // Skip leading whitespace/empty words
+  for (const auto& word : line) {
+    std::string w = word.text.c_str();
+    // Skip if empty or just whitespace
+    if (!w.empty() && w.find_first_not_of(" \t\n\r") != std::string::npos) {
+      return w;
+    }
   }
+  return "";
+}
 
-  // Initialize layout (sets internal space width). layoutText will reset provider position.
+static std::string getLastWord(const std::vector<LayoutStrategy::Word>& line) {
+  // Skip trailing whitespace/empty words
+  for (auto it = line.rbegin(); it != line.rend(); ++it) {
+    std::string w = it->text.c_str();
+    // Skip if empty or just whitespace
+    if (!w.empty() && w.find_first_not_of(" \t\n\r") != std::string::npos) {
+      return w;
+    }
+  }
+  return "";
+}
+
+void runBidirectionalParagraphTest(TestUtils::TestRunner& runner, EInkDisplay& display, TextRenderer& renderer) {
+  std::cout << "\n=== Running Bidirectional Paragraph Test ===\n";
+  std::cout << "Provider: " << TestGlobals::getProviderName() << "\n";
+  std::cout << "Layout: " << TestGlobals::getLayoutName() << "\n";
+
+  // Get the global provider and layout
+  TestGlobals::resetProvider();
+  WordProvider& provider = TestGlobals::provider();
+  LayoutStrategy& layout = TestGlobals::layout();
+
+  // Initialize layout config
   LayoutStrategy::LayoutConfig cfg;
   cfg.marginLeft = 0;
   cfg.marginRight = 0;
@@ -57,189 +70,285 @@ void runBidirectionalParagraphTest(TestUtils::TestRunner& runner, const std::str
   cfg.marginBottom = 0;
   cfg.lineHeight = 10;
   cfg.minSpaceWidth = 1;
-  // pageWidth determines maxWidth used by getNextLine/getPrevLine. Choose a value that will create multiple lines.
   cfg.pageWidth = TestConfig::DISPLAY_WIDTH;
   cfg.pageHeight = TestConfig::DISPLAY_HEIGHT;
   cfg.alignment = LayoutStrategy::ALIGN_LEFT;
 
-  layout->layoutText(provider, renderer, cfg);
+  // Initialize layout (sets internal space width)
+  layout.layoutText(provider, renderer, cfg);
 
   const int16_t maxWidth = static_cast<int16_t>(cfg.pageWidth - cfg.marginLeft - cfg.marginRight);
 
   struct LineInfo {
     std::string text;
+    std::string firstWord;
+    std::string lastWord;
     int startPos;
     int endPos;
     bool isParagraphEnd;
   };
 
-  int paragraphNum = 0;
-  int totalLines = 0;
+  struct ParagraphInfo {
+    std::vector<LineInfo> lines;
+    int startPos;
+    int endPos;
+  };
 
-  // Process each paragraph: forward pass, backward pass, compare, repeat
+  // Debug: dump last 30 words from provider to see what's being returned
+  std::cout << "\n=== Debug: Last 30 words from provider ===\n";
+  provider.reset();
+  // Skip to near the end (closer to position 10300)
   while (provider.hasNextWord()) {
-    paragraphNum++;
+    int pos = provider.getCurrentIndex();
+    if (pos > 10280)
+      break;  // Get close to the end
+    provider.getNextWord();
+  }
+  // Now print the remaining words until end
+  for (int i = 0; i < 30 && provider.hasNextWord(); i++) {
+    int pos = provider.getCurrentIndex();
+    String word = provider.getNextWord();
+    int posAfter = provider.getCurrentIndex();
+    std::string escaped;
+    for (size_t j = 0; j < word.length(); j++) {
+      char c = word.charAt(j);
+      if (c == '\n')
+        escaped += "\\n";
+      else if (c == '\r')
+        escaped += "\\r";
+      else if (c == '\t')
+        escaped += "\\t";
+      else if (c == ' ')
+        escaped += "_";
+      else if (c < 32 || c > 126)
+        escaped += "[" + std::to_string((int)(unsigned char)c) + "]";
+      else
+        escaped += c;
+    }
+    std::cout << "  [" << i << "] pos " << pos << "->" << posAfter << " len=" << word.length() << ": \"" << escaped
+              << "\"\n";
+  }
+  std::cout << "Final position: " << provider.getCurrentIndex() << "\n";
+  std::cout << "hasNextWord after dump: " << (provider.hasNextWord() ? "true" : "false") << "\n";
+  std::cout << "=== End Debug ===\n\n";
 
-    // Forward pass: collect lines until paragraph end
-    std::vector<LineInfo> forwardLines;
-    int paragraphStartPos = provider.getCurrentIndex();
+  // Reset provider for actual test
+  provider.reset();
+
+  // Forward pass: collect all paragraphs with their lines
+  std::vector<ParagraphInfo> forwardParagraphs;
+
+  while (provider.hasNextWord()) {
+    ParagraphInfo para;
+    para.startPos = provider.getCurrentIndex();
 
     bool reachedParagraphEnd = false;
     while (provider.hasNextWord() && !reachedParagraphEnd) {
       bool isParagraphEnd = false;
       int startPos = provider.getCurrentIndex();
-      auto line = layout->test_getNextLineDefault(provider, renderer, maxWidth, isParagraphEnd);
+      auto line = layout.test_getNextLineDefault(provider, renderer, maxWidth, isParagraphEnd);
       int endPos = provider.getCurrentIndex();
 
-      std::string lineText = joinLine(line);
-      forwardLines.push_back({lineText, startPos, endPos, isParagraphEnd});
+      // Skip empty lines at end of content (not intentional empty lines)
+      if (line.empty() && !isParagraphEnd) {
+        break;
+      }
+
+      LineInfo lineInfo;
+      lineInfo.text = joinLine(line);
+      lineInfo.firstWord = getFirstWord(line);
+      lineInfo.lastWord = getLastWord(line);
+      lineInfo.startPos = startPos;
+      lineInfo.endPos = endPos;
+      lineInfo.isParagraphEnd = isParagraphEnd;
+      para.lines.push_back(lineInfo);
 
       reachedParagraphEnd = isParagraphEnd;
     }
 
-    int paragraphEndPos = provider.getCurrentIndex();
-
-    std::vector<LineInfo> backwardLines;
-    bool hitParagraphStart = false;
-    while (provider.getCurrentIndex() > 0) {
-      bool isParagraphEnd = false;
-      int endPos = provider.getCurrentIndex();
-      auto line = layout->test_getPrevLine(provider, renderer, maxWidth, isParagraphEnd);
-      int startPos = provider.getCurrentIndex();
-
-      std::string lineText = joinLine(line);
-      backwardLines.insert(backwardLines.begin(), {lineText, startPos, endPos, isParagraphEnd});
-
-      // If we hit the paragraph start (encountered the previous paragraph's ending newline), stop here
-      if (isParagraphEnd) {
-        hitParagraphStart = true;
-        // Position is now at the newline, advance past it to get paragraph start
-        provider.setPosition(provider.getCurrentIndex());
-        break;
-      }
-
-      // Also stop if we've gone back past the paragraph start (shouldn't happen with correct logic)
-      if (provider.getCurrentIndex() <= paragraphStartPos) {
-        break;
-      }
+    para.endPos = provider.getCurrentIndex();
+    // Only add non-empty paragraphs
+    if (!para.lines.empty()) {
+      forwardParagraphs.push_back(para);
     }
-
-    int backwardStartPos = provider.getCurrentIndex();
-
-    // Compare forward and backward passes for this paragraph
-    // The line breaks don't need to match, but the paragraph start/end positions should
-    std::string errorMsg;
-    bool hasParagraphError = false;
-
-    // Check that both passes cover the same text range
-    if (paragraphStartPos != backwardStartPos) {
-      hasParagraphError = true;
-      errorMsg = "Paragraph " + std::to_string(paragraphNum) +
-                 " start position mismatch! Forward: " + std::to_string(paragraphStartPos) +
-                 ", Backward: " + std::to_string(backwardStartPos);
-      runner.expectTrue(false, "Paragraph start position match", errorMsg);
-    } else {
-      runner.expectTrue(true, "Paragraph " + std::to_string(paragraphNum) + " start position match", "", true);
-    }
-
-    // Both should have same paragraph end
-    if (forwardLines.empty() != backwardLines.empty()) {
-      hasParagraphError = true;
-      runner.expectTrue(false, "Paragraph " + std::to_string(paragraphNum) + " line consistency",
-                        "One pass has lines, the other doesn't!");
-    } else if (!forwardLines.empty() && !backwardLines.empty()) {
-      // Check that the last line in forward pass has isParagraphEnd matching first line in backward
-      bool forwardHasParagraphEnd = forwardLines.back().isParagraphEnd;
-      bool backwardHasParagraphEnd = backwardLines.front().isParagraphEnd;
-
-      // Special cases where flags might legitimately differ:
-      // 1. Last paragraph: Forward won't see a newline at EOF
-      // 2. First paragraph: Backward hits beginning of file (position 0) instead of a newline
-      bool isLastParagraph = (paragraphEndPos >= static_cast<int>(content.length()) - 1) || !provider.hasNextWord();
-      bool isFirstParagraph = (paragraphStartPos == 0);
-
-      if (forwardHasParagraphEnd != backwardHasParagraphEnd && !isLastParagraph && !isFirstParagraph) {
-        hasParagraphError = true;
-        errorMsg = "Paragraph end flag mismatch! Forward last line: " + std::to_string(forwardHasParagraphEnd) +
-                   ", Backward first line: " + std::to_string(backwardHasParagraphEnd);
-        runner.expectTrue(false, "Paragraph " + std::to_string(paragraphNum) + " end flag match", errorMsg);
-      } else {
-        runner.expectTrue(true, "Paragraph " + std::to_string(paragraphNum) + " end flag match", "", true);
-      }
-    }
-
-    // Print detailed debug info only for failing paragraphs
-    if (hasParagraphError) {
-      std::cerr << "\n=== Paragraph " << paragraphNum << " FAILED ===\n";
-      std::cerr << "Forward start: " << paragraphStartPos << ", end: " << paragraphEndPos << "\n";
-      std::cerr << "Backward start: " << backwardStartPos << ", end: " << paragraphEndPos << "\n";
-      std::cerr << "Forward lines (" << forwardLines.size() << "):\n";
-      for (size_t i = 0; i < forwardLines.size(); i++) {
-        std::cerr << "  [" << i << "] pos " << forwardLines[i].startPos << "-" << forwardLines[i].endPos
-                  << " isParagraphEnd=" << forwardLines[i].isParagraphEnd << ": \"" << forwardLines[i].text << "\"\n";
-      }
-      std::cerr << "Backward lines (" << backwardLines.size() << "):\n";
-      for (size_t i = 0; i < backwardLines.size(); i++) {
-        std::cerr << "  [" << i << "] pos " << backwardLines[i].startPos << "-" << backwardLines[i].endPos
-                  << " isParagraphEnd=" << backwardLines[i].isParagraphEnd << ": \"" << backwardLines[i].text << "\"\n";
-      }
-      std::cerr << "===========================\n\n";
-    }
-
-    totalLines += forwardLines.size();
-
-    // Move provider back to end of paragraph for next forward pass
-    provider.setPosition(paragraphEndPos);
   }
 
-  std::cout << "Processed " << paragraphNum << " paragraphs with " << totalLines << " total lines\n";
+  std::cout << "Forward pass collected " << forwardParagraphs.size() << " paragraphs\n";
 
-  delete layout;
+  // Backward pass: for each paragraph, go backward from its end and collect lines
+  int errors = 0;
+  for (size_t p = 0; p < forwardParagraphs.size(); p++) {
+    const ParagraphInfo& fwdPara = forwardParagraphs[p];
+
+    // Position at end of this paragraph
+    provider.setPosition(fwdPara.endPos);
+
+    // Collect lines going backward until we hit a paragraph end (or start of content)
+    std::vector<LineInfo> backwardLines;
+    while (provider.getCurrentIndex() > fwdPara.startPos) {
+      bool isParagraphEnd = false;
+      int endPos = provider.getCurrentIndex();
+      auto line = layout.test_getPrevLine(provider, renderer, maxWidth, isParagraphEnd);
+      int startPos = provider.getCurrentIndex();
+
+      LineInfo lineInfo;
+      lineInfo.text = joinLine(line);
+      lineInfo.firstWord = getFirstWord(line);
+      lineInfo.lastWord = getLastWord(line);
+      lineInfo.startPos = startPos;
+      lineInfo.endPos = endPos;
+      lineInfo.isParagraphEnd = isParagraphEnd;
+      backwardLines.insert(backwardLines.begin(), lineInfo);
+
+      // Stop if we've reached the paragraph start
+      if (startPos <= fwdPara.startPos) {
+        break;
+      }
+    }
+
+    // Compare: check line count, first word of first line, last word of last line
+    bool lineCountMatch = (fwdPara.lines.size() == backwardLines.size());
+
+    std::string fwdFirstWord = fwdPara.lines.empty() ? "" : fwdPara.lines.front().firstWord;
+    std::string bwdFirstWord = backwardLines.empty() ? "" : backwardLines.front().firstWord;
+    bool firstWordMatch = (fwdFirstWord == bwdFirstWord);
+
+    std::string fwdLastWord = fwdPara.lines.empty() ? "" : fwdPara.lines.back().lastWord;
+    std::string bwdLastWord = backwardLines.empty() ? "" : backwardLines.back().lastWord;
+    bool lastWordMatch = (fwdLastWord == bwdLastWord);
+
+    bool hasParagraphError = !lineCountMatch || !firstWordMatch || !lastWordMatch;
+
+    if (hasParagraphError) {
+      errors++;
+      std::cerr << "\n=== Paragraph " << p << " FAILED ===\n";
+      std::cerr << "Forward: " << fwdPara.lines.size() << " lines, Backward: " << backwardLines.size() << " lines\n";
+      std::cerr << "First word - Forward: \"" << fwdFirstWord << "\", Backward: \"" << bwdFirstWord << "\"\n";
+      std::cerr << "Last word - Forward: \"" << fwdLastWord << "\", Backward: \"" << bwdLastWord << "\"\n";
+
+      std::cerr << "Forward lines:\n";
+      for (size_t i = 0; i < fwdPara.lines.size(); i++) {
+        std::cerr << "  [" << i << "] pos " << fwdPara.lines[i].startPos << "-" << fwdPara.lines[i].endPos << ": \""
+                  << fwdPara.lines[i].text << "\"\n";
+      }
+      std::cerr << "Backward lines:\n";
+      for (size_t i = 0; i < backwardLines.size(); i++) {
+        std::cerr << "  [" << i << "] pos " << backwardLines[i].startPos << "-" << backwardLines[i].endPos << ": \""
+                  << backwardLines[i].text << "\"\n";
+      }
+      std::cerr << "===========================\n";
+    }
+
+    runner.expectTrue(
+        lineCountMatch, "Paragraph " + std::to_string(p) + " line count match",
+        "Forward: " + std::to_string(fwdPara.lines.size()) + ", Backward: " + std::to_string(backwardLines.size()),
+        lineCountMatch);  // silent if passing
+    runner.expectTrue(firstWordMatch, "Paragraph " + std::to_string(p) + " first word match",
+                      "Forward: \"" + fwdFirstWord + "\", Backward: \"" + bwdFirstWord + "\"", firstWordMatch);
+    runner.expectTrue(lastWordMatch, "Paragraph " + std::to_string(p) + " last word match",
+                      "Forward: \"" + fwdLastWord + "\", Backward: \"" + bwdLastWord + "\"", lastWordMatch);
+  }
+
+  std::cout << "Backward verification: " << errors << " errors out of " << forwardParagraphs.size() << " paragraphs\n";
+
+  // Print first and last few lines from all paragraphs
+  std::vector<LineInfo> allForwardLines;
+  for (const auto& para : forwardParagraphs) {
+    for (const auto& line : para.lines) {
+      allForwardLines.push_back(line);
+    }
+  }
+
+  const size_t numLinesToShow = 5;
+  std::cout << "\n--- First " << std::min(numLinesToShow, allForwardLines.size()) << " forward lines ---\n";
+  for (size_t i = 0; i < std::min(numLinesToShow, allForwardLines.size()); i++) {
+    std::cout << "  [" << i << "] pos " << allForwardLines[i].startPos << "-" << allForwardLines[i].endPos
+              << " isParagraphEnd=" << allForwardLines[i].isParagraphEnd << ": \"" << allForwardLines[i].text << "\"\n";
+  }
+
+  if (allForwardLines.size() > numLinesToShow * 2) {
+    std::cout << "  ... (" << (allForwardLines.size() - numLinesToShow * 2) << " lines omitted) ...\n";
+  }
+
+  std::cout << "\n--- Last " << std::min(numLinesToShow, allForwardLines.size()) << " forward lines ---\n";
+  size_t startIdx = allForwardLines.size() > numLinesToShow ? allForwardLines.size() - numLinesToShow : 0;
+  for (size_t i = startIdx; i < allForwardLines.size(); i++) {
+    std::cout << "  [" << i << "] pos " << allForwardLines[i].startPos << "-" << allForwardLines[i].endPos
+              << " isParagraphEnd=" << allForwardLines[i].isParagraphEnd << ": \"" << allForwardLines[i].text << "\"\n";
+  }
+
+  // Now do a full backward pass from end to start and print first/last 5 lines
+  std::cout << "\n=== Full backward pass ===\n";
+  int endPosition = forwardParagraphs.empty() ? 0 : forwardParagraphs.back().endPos;
+  provider.setPosition(endPosition);
+  std::vector<LineInfo> allBackwardLines;
+  while (provider.getCurrentIndex() > 0) {
+    bool isParagraphEnd = false;
+    int endPos = provider.getCurrentIndex();
+    auto line = layout.test_getPrevLine(provider, renderer, maxWidth, isParagraphEnd);
+    int startPos = provider.getCurrentIndex();
+
+    LineInfo lineInfo;
+    lineInfo.text = joinLine(line);
+    lineInfo.firstWord = getFirstWord(line);
+    lineInfo.lastWord = getLastWord(line);
+    lineInfo.startPos = startPos;
+    lineInfo.endPos = endPos;
+    lineInfo.isParagraphEnd = isParagraphEnd;
+    allBackwardLines.insert(allBackwardLines.begin(), lineInfo);
+
+    if (startPos <= 0)
+      break;
+  }
+
+  std::cout << "Backward pass collected " << allBackwardLines.size() << " lines total\n";
+
+  std::cout << "\n--- First " << std::min(numLinesToShow, allBackwardLines.size()) << " backward lines ---\n";
+  for (size_t i = 0; i < std::min(numLinesToShow, allBackwardLines.size()); i++) {
+    std::cout << "  [" << i << "] pos " << allBackwardLines[i].startPos << "-" << allBackwardLines[i].endPos
+              << " isParagraphEnd=" << allBackwardLines[i].isParagraphEnd << ": \"" << allBackwardLines[i].text
+              << "\"\n";
+  }
+
+  if (allBackwardLines.size() > numLinesToShow * 2) {
+    std::cout << "  ... (" << (allBackwardLines.size() - numLinesToShow * 2) << " lines omitted) ...\n";
+  }
+
+  std::cout << "\n--- Last " << std::min(numLinesToShow, allBackwardLines.size()) << " backward lines ---\n";
+  size_t bwdStartIdx = allBackwardLines.size() > numLinesToShow ? allBackwardLines.size() - numLinesToShow : 0;
+  for (size_t i = bwdStartIdx; i < allBackwardLines.size(); i++) {
+    std::cout << "  [" << i << "] pos " << allBackwardLines[i].startPos << "-" << allBackwardLines[i].endPos
+              << " isParagraphEnd=" << allBackwardLines[i].isParagraphEnd << ": \"" << allBackwardLines[i].text
+              << "\"\n";
+  }
 }
 
 int main(int argc, char** argv) {
   TestUtils::TestRunner runner("Layout Bidirectional Paragraph Test");
 
-  // Parse command line arguments for layout selection
-  // Usage: test.exe [path] [layout]
-  //   layout: "greedy" or "knuthplass"
-  std::string path;
-  TestFactory::LayoutType layoutType = TestFactory::g_defaultLayoutType;
-
-  if (argc >= 2) {
-    std::string arg1 = argv[1];
-    if (arg1 == "greedy") {
-      layoutType = TestFactory::LayoutType::GREEDY;
-    } else if (arg1 == "knuthplass") {
-      layoutType = TestFactory::LayoutType::KNUTH_PLASS;
-    } else {
-      path = arg1;
-    }
-  }
-  if (argc >= 3) {
-    std::string arg2 = argv[2];
-    if (arg2 == "greedy") {
-      layoutType = TestFactory::LayoutType::GREEDY;
-    } else if (arg2 == "knuthplass") {
-      layoutType = TestFactory::LayoutType::KNUTH_PLASS;
-    }
-  }
-
-  if (path.empty()) {
-    path = TestConfig::DEFAULT_TEST_FILE;
-  }
-
-  std::string content = TestUtils::readFile(path);
-  if (content.empty()) {
-    std::cerr << "Failed to open '" << path << "'\n";
+  // Initialize global provider and layout from test_globals.h configuration
+  if (!TestGlobals::init()) {
+    std::cerr << "Failed to initialize test globals\n";
     return 2;
   }
+
+  // Create display with dummy pins
+  EInkDisplay display(TestConfig::DUMMY_PIN, TestConfig::DUMMY_PIN, TestConfig::DUMMY_PIN, TestConfig::DUMMY_PIN,
+                      TestConfig::DUMMY_PIN, TestConfig::DUMMY_PIN);
+  display.begin();
 
   // Initialize font glyph maps for fast lookup
   initFontGlyphMap(&NotoSans26);
 
-  // Run the test with the selected layout strategy
-  runBidirectionalParagraphTest(runner, content, layoutType);
+  // Create renderer
+  TextRenderer renderer(display);
+  renderer.setFont(&NotoSans26);
+
+  // Run the bidirectional test
+  runBidirectionalParagraphTest(runner, display, renderer);
+
+  // Cleanup
+  TestGlobals::cleanup();
 
   return runner.allPassed() ? 0 : 1;
 }

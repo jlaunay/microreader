@@ -32,6 +32,11 @@ class LayoutStrategy {
     bool wasSplit;  // True if this word was split (hyphenated) and must end the line
   };
 
+  struct Line {
+    std::vector<Word> words;
+    TextAlignment alignment;  // Alignment for this specific line (from CSS or config default)
+  };
+
   struct LayoutConfig {
     int16_t marginLeft;
     int16_t marginRight;
@@ -52,7 +57,7 @@ class LayoutStrategy {
   };
 
   struct PageLayout {
-    std::vector<std::vector<Word>> lines;
+    std::vector<Line> lines;
     int endPosition;  // provider index at end of page
   };
 
@@ -88,12 +93,10 @@ class LayoutStrategy {
 
   // Test wrappers for common navigation helpers. Tests should use these instead
   // of dependent-strategy-specific functions.
-  std::vector<Word> test_getPrevLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth,
-                                     bool& isParagraphEnd);
+  Line test_getPrevLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth, bool& isParagraphEnd);
   int test_getPreviousPageStart(WordProvider& provider, TextRenderer& renderer, const LayoutConfig& config,
                                 int currentStartPosition);
-  std::vector<Word> test_getNextLineDefault(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth,
-                                            bool& isParagraphEnd);
+  Line test_getNextLineDefault(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth, bool& isParagraphEnd);
 
  protected:
   struct HyphenSplit {
@@ -102,8 +105,10 @@ class LayoutStrategy {
     bool found;          // True if a valid split was found
   };
   // Shared helpers used by multiple strategies
-  std::vector<Word> getNextLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth, bool& isParagraphEnd);
-  std::vector<Word> getPrevLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth, bool& isParagraphEnd);
+  Line getNextLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth, bool& isParagraphEnd,
+                   TextAlignment defaultAlignment);
+  Line getPrevLine(WordProvider& provider, TextRenderer& renderer, int16_t maxWidth, bool& isParagraphEnd,
+                   TextAlignment defaultAlignment);
 
   // Word splitting helpers
   HyphenSplit findBestHyphenSplitForward(const String& word, int16_t availableWidth, TextRenderer& renderer);

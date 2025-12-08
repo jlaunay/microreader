@@ -4,7 +4,10 @@
 #include <SD.h>
 
 #include <cstdint>
+#include <vector>
 
+#include "../css/CssParser.h"
+#include "../css/CssStyle.h"
 #include "../epub/EpubReader.h"
 #include "../xml/SimpleXmlParser.h"
 #include "StringWordProvider.h"
@@ -48,6 +51,14 @@ class EpubWordProvider : public WordProvider {
     return currentChapterName_;
   }
 
+  // Style support
+  CssStyle getCurrentStyle() override {
+    return currentStyle_;
+  }
+  bool hasStyleSupport() override {
+    return cssParser_ != nullptr;
+  }
+
  private:
   // Opens a specific chapter (spine item) for reading
   bool openChapter(int chapterIndex);
@@ -63,6 +74,10 @@ class EpubWordProvider : public WordProvider {
   // when there's no more actual content
   void skipToNextContent();
 
+  // Update the current style based on the element's class attribute
+  void pushStyleForElement();
+  void popStyle();
+
   bool valid_ = false;
   bool isEpub_ = false;  // True if source is EPUB, false if direct XHTML
   size_t bufSize_ = 0;
@@ -77,6 +92,11 @@ class EpubWordProvider : public WordProvider {
   size_t prevFilePos_ = 0;      // Previous parser position for ungetWord()
   size_t fileSize_;             // Total file size for percentage calculation
   size_t firstContentPos_ = 0;  // Position of first readable content in chapter
+
+  // CSS style tracking
+  const CssParser* cssParser_ = nullptr;  // Borrowed from EpubReader, not owned
+  CssStyle currentStyle_;                 // Currently active style
+  std::vector<CssStyle> styleStack_;      // Stack of styles for nested elements
 };
 
 #endif
