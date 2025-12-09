@@ -17,7 +17,7 @@
 #include "core/EInkDisplay.h"
 #include "platform_stubs.h"
 #include "rendering/TextRenderer.h"
-#include "resources/fonts/NotoSans26.h"
+#include "resources/fonts/FontDefinitions.h"
 #include "test_config.h"
 #include "test_globals.h"
 #include "text/hyphenation/HyphenationStrategy.h"
@@ -224,11 +224,12 @@ int main(int argc, char* argv[]) {
   display.clearScreen(0xFF);
 
   // Initialize font glyph maps for fast lookup
-  initFontGlyphMap(&NotoSans26);
+  initFontFamilyGlyphMaps(&notoSansFamily);
 
   // Render some text onto the frame buffer using the TextRenderer
   TextRenderer renderer(display);
-  renderer.setFont(&NotoSans26);
+  renderer.setFontFamily(&notoSansFamily);
+  renderer.setFontStyle(FontStyle::ITALIC);
   renderer.setTextColor(TextRenderer::COLOR_BLACK);
   renderer.setFrameBuffer(display.getFrameBuffer());
   renderer.setBitmapType(TextRenderer::BITMAP_BW);

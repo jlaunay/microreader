@@ -62,25 +62,6 @@ static uint32_t decodeUtf8Codepoint(const unsigned char*& p) {
   return UTF8_REPLACEMENT_CHAR;
 }
 
-// Initialize the glyph map for fast lookup
-void initFontGlyphMap(SimpleGFXfont* font) {
-  if (!font || font->glyphCount == 0) {
-    return;
-  }
-
-  // Create the map if it doesn't exist
-  if (!font->glyphMap) {
-    font->glyphMap = new std::unordered_map<uint32_t, uint16_t>();
-  }
-
-  // Clear and rebuild
-  font->glyphMap->clear();
-  font->glyphMap->reserve(font->glyphCount);
-
-  for (uint16_t i = 0; i < font->glyphCount; i++) {
-    (*font->glyphMap)[font->glyph[i].codepoint] = i;
-  }
-}
 
 // Helper function to find a glyph index by codepoint
 static int findGlyphIndex(const SimpleGFXfont* font, uint32_t codepoint) {
@@ -134,6 +115,22 @@ void TextRenderer::setBitmapType(BitmapType type) {
 
 void TextRenderer::setFont(const SimpleGFXfont* f) {
   currentFont = f;
+  // Reset family and style when setting a single font directly
+  currentFamily = nullptr;
+  currentStyle = FontStyle::REGULAR;
+}
+
+void TextRenderer::setFontFamily(FontFamily* family) {
+  currentFamily = family;
+  // Automatically set to the current style's variant
+  currentFont = getFontVariant(family, currentStyle);
+}
+
+void TextRenderer::setFontStyle(FontStyle style) {
+  currentStyle = style;
+  if (currentFamily) {
+    currentFont = getFontVariant(currentFamily, style);
+  }
 }
 
 void TextRenderer::setTextColor(uint16_t c) {

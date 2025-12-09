@@ -20,3 +20,4 @@ __pycache__
 /test/output
 /firmware_backup.bin
 /data/books
+/resources/books

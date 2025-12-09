@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include <resources/fonts/Font14.h>
-#include <resources/fonts/NotoSans26.h>
+#include <resources/fonts/FontDefinitions.h>
 
 #include <cstring>
 
@@ -194,8 +194,11 @@ void TextViewerScreen::showPage() {
     // No provider available (no file open). Show a helpful message instead
     // of returning silently so the user knows why nothing is displayed.
     display.clearScreen(0xFF);
+
     textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-    textRenderer.setFont(&NotoSans26);
+    textRenderer.setFontFamily(&notoSansFamily);
+    textRenderer.setFontStyle(FontStyle::ITALIC);
+
     const char* msg = "No document open";
     int16_t x1, y1;
     uint16_t w, h;
@@ -210,7 +213,8 @@ void TextViewerScreen::showPage() {
 
   display.clearScreen(0xFF);
   textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-  textRenderer.setFont(&NotoSans26);
+  textRenderer.setFontFamily(&notoSansFamily);
+  textRenderer.setFontStyle(FontStyle::REGULAR);
 
   // print out current percentage
   Serial.print("Page start: ");
@@ -283,7 +287,8 @@ void TextViewerScreen::showPage() {
   // grayscale rendering
   {
     textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-    textRenderer.setFont(&NotoSans26);
+    textRenderer.setFontFamily(&notoSansFamily);
+    textRenderer.setFontStyle(FontStyle::REGULAR);
 
     // Render and copy to LSB buffer
     display.clearScreen(0x00);

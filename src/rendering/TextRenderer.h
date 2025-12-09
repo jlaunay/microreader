@@ -37,6 +37,8 @@ class TextRenderer {
 
   // Minimal API used by the rest of the project
   void setFont(const SimpleGFXfont* f = nullptr);
+  void setFontFamily(FontFamily* family);
+  void setFontStyle(FontStyle style);
   void setTextColor(uint16_t c);
   void setCursor(int16_t x, int16_t y);
   size_t print(const char* s);
@@ -52,6 +54,8 @@ class TextRenderer {
  private:
   EInkDisplay& display;
   const SimpleGFXfont* currentFont = nullptr;
+  FontFamily* currentFamily = nullptr;
+  FontStyle currentStyle = FontStyle::REGULAR;
   uint8_t* frameBuffer = nullptr;
   BitmapType bitmapType = BITMAP_BW;
   int16_t cursorX = 0;

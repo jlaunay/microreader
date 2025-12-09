@@ -50,8 +50,7 @@ namespace TestGlobals {
 
 // --- Option 3: EpubWordProvider ---
 #define USE_EPUB_PROVIDER
-// inline const char* g_testFilePath = "data/books/1A9A8A09379E4577B2346DECBE09D19A.xhtml";
-inline const char* g_testFilePath = "data/books/Bobiverse 1.epub";
+inline const char* g_testFilePath = "resources/books/bobiverse one.epub";
 
 // ============================================================================
 // CONFIGURATION: Choose your layout strategy
@@ -138,6 +137,9 @@ inline bool initProvider() {
     delete epub;
     return false;
   }
+
+  epub->setChapter(40);
+
   g_provider = epub;
   return true;
 

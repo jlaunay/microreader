@@ -833,6 +833,8 @@ void EpubWordProvider::setPosition(int index) {
 
   parser_->seekToFilePosition(filePos);
   prevFilePos_ = parser_->getFilePosition();
+
+  updateStyleForElement();
 }
 
 void EpubWordProvider::reset() {

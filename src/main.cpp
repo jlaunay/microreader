@@ -12,7 +12,7 @@
 #include "rendering/SimpleFont.h"
 #include "resources/fonts/Font14.h"
 #include "resources/fonts/Font27.h"
-#include "resources/fonts/NotoSans26.h"
+#include "resources/fonts/FontDefinitions.h"
 #include "ui/UIManager.h"
 
 // USB detection pin
@@ -151,7 +151,7 @@ void setup() {
   Serial.println("Initializing font lookup maps...");
   initFontGlyphMap(&Font14);
   initFontGlyphMap(&Font27);
-  initFontGlyphMap(&NotoSans26);
+  initFontFamilyGlyphMaps(&notoSansFamily);
   Serial.println("Font maps initialized");
 
   // Initialize buttons
