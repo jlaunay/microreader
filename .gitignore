@@ -21,3 +21,4 @@ __pycache__
 /firmware_backup.bin
 /data/books
 /resources/books
+__pycache__
