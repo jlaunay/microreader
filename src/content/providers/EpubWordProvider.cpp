@@ -81,11 +81,14 @@ EpubWordProvider::~EpubWordProvider() {
 }
 
 bool EpubWordProvider::createDirRecursive(const String& path) {
-  if (SD.exists(path.c_str())) return true;
+  if (SD.exists(path.c_str()))
+    return true;
   int slash = path.lastIndexOf('/');
-  if (slash <= 0) return true;  // root or no slash
+  if (slash <= 0)
+    return true;  // root or no slash
   String parent = path.substring(0, slash);
-  if (!createDirRecursive(parent)) return false;
+  if (!createDirRecursive(parent))
+    return false;
   return SD.mkdir(path.c_str());
 }
 
@@ -151,214 +154,289 @@ bool EpubWordProvider::convertXhtmlToTxt(const String& srcPath, String& outTxtPa
 }
 
 void EpubWordProvider::performXhtmlToTxtConversion(SimpleXmlParser& parser, File& out) {
-  // State tracking
-  String writeBuffer;
-  const size_t FLUSH_THRESH = 2048;
-  bool lastWasNewline = false;
-  bool trimNextText = false;
-  std::vector<String> elementStack;
-  std::vector<String> classStack;
-  // For paragraph class support: classes associated with the current paragraph element
-  String pendingParagraphClasses = "";
-  bool paragraphClassesWritten = false;
+  const size_t FLUSH_THRESHOLD = 2048;
 
-  int nodeCount = 0;
-  int textNodeCount = 0;
-  int elementCount = 0;
+  String buffer;                         // Output buffer
+  std::vector<String> elementStack;      // Track nested elements
+  String pendingParagraphClasses;        // CSS classes for current block
+  String pendingInlineStyle;             // Inline style attribute for current block
+  bool paragraphClassesWritten = false;  // Have we written style token?
+  bool lineHasContent = false;           // Does current line have visible content?
+  bool lineHasNbsp = false;              // Does current line have &nbsp;?
 
-  // Helper lambda to trim trailing whitespace from buffer
-  auto trimTrailingWhitespace = [&]() {
-    while (writeBuffer.length() > 0) {
-      char lastChar = writeBuffer.charAt(writeBuffer.length() - 1);
-      if (lastChar == ' ' || lastChar == '\n' || lastChar == '\r' || lastChar == '\t') {
-        writeBuffer = writeBuffer.substring(0, (int)writeBuffer.length() - 1);
-      } else {
-        break;
-      }
-    }
-  };
-
-  // Helper lambda to add newline (always after trimming trailing whitespace)
-  auto addNewline = [&]() {
-    writeBuffer += "\n";
-    lastWasNewline = true;
-    trimNextText = true;
-    // When a paragraph ends, reset pending classes
-    pendingParagraphClasses = "";
-    paragraphClassesWritten = false;
-  };
-
-  // Helper lambda to flush buffer to disk
-  auto flushBuffer = [&]() {
-    if (writeBuffer.length() > 0) {
-      out.print(writeBuffer);
-      writeBuffer = "";
-    }
-  };
-
-  // Helper lambda to check if we're inside any skipped element
-  auto insideSkippedElement = [&]() {
-    for (const auto& elem : elementStack) {
-      if (isSkippedElement(elem)) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  // Parse and convert XHTML to plain text
   while (parser.read()) {
-    nodeCount++;
-    auto nodeType = parser.getNodeType();
+    SimpleXmlParser::NodeType nodeType = parser.getNodeType();
 
-    if (nodeType == SimpleXmlParser::Text) {
-      textNodeCount++;
-      // Use element stack instead of parser.getName() for streaming compatibility
-      if (insideSkippedElement()) {
-        continue;
-      }
-
-      // Extract and normalize text content
-      String rawText;
-      bool hasText = parser.hasMoreTextChars();
-      while (parser.hasMoreTextChars()) {
-        char c = parser.readTextNodeCharForward();
-        if (c == '\r')
-          continue;
-        if (c == '\t')
-          c = ' ';
-        rawText += c;
-      }
-
-      // Collapse consecutive whitespace into single spaces
-      String normalized;
-      bool lastWasSpace = false;
-      for (size_t i = 0; i < (size_t)rawText.length(); ++i) {
-        char c = rawText.charAt(i);
-        if (c == ' ' || c == '\n') {
-          if (!lastWasSpace) {
-            normalized += ' ';
-            lastWasSpace = true;
-          }
-        } else {
-          normalized += c;
-          lastWasSpace = false;
-        }
-      }
-
-      // Trim leading whitespace if we're starting a new block
-      if (trimNextText && !normalized.isEmpty()) {
-        size_t firstNonWs = 0;
-        while (firstNonWs < (size_t)normalized.length() &&
-               (normalized.charAt(firstNonWs) == ' ' || normalized.charAt(firstNonWs) == '\n'))
-          firstNonWs++;
-        if (firstNonWs > 0) {
-          normalized = normalized.substring((int)firstNonWs);
-        }
-        trimNextText = false;
-      }
-
-      // Append to buffer
-      if (!normalized.isEmpty()) {
-        writeParagraphStyleToken(writeBuffer, pendingParagraphClasses, paragraphClassesWritten);
-        writeBuffer += normalized;
-        lastWasNewline = false;
-      }
-
-      // Periodic flush to avoid excessive memory use
-      if (writeBuffer.length() > FLUSH_THRESH) {
-        flushBuffer();
-      }
-
-    } else if (nodeType == SimpleXmlParser::Element) {
-      elementCount++;
+    // ========== START ELEMENT ==========
+    if (nodeType == SimpleXmlParser::Element) {
       String name = parser.getName();
 
-      // Read class attribute for this element
-      String classAttr = parser.getAttribute("class");
-
-      // Only push non-empty elements to the stack
-      // Self-closing elements (like <br/>, <meta/>, <link/>) don't need to be tracked
+      // Track non-self-closing elements
       if (!parser.isEmptyElement()) {
         elementStack.push_back(name);
-        classStack.push_back(classAttr);
       }
 
-      // If this is a paragraph/block element, treat classAttr as the classes for this paragraph
+      // Block elements: add newline before if current line has content
+      // This ensures blockquotes, nested divs, etc. start on a new line
+      if (isBlockElement(name) && lineHasContent) {
+        buffer += "\n";
+        lineHasContent = false;
+        lineHasNbsp = false;
+      }
+
+      // Capture CSS classes and inline styles for block elements
       if (isBlockElement(name)) {
-        pendingParagraphClasses = classAttr;
+        pendingParagraphClasses = parser.getAttribute("class");
+        pendingInlineStyle = parser.getAttribute("style");
         paragraphClassesWritten = false;
       }
 
-      // Only add newlines for self-closing line break elements (br, hr)
-      // Block elements get their newline when they close (in EndElement)
-      bool isLineBreak = parser.isEmptyElement() && (name == "br" || name == "hr");
-
-      if (isLineBreak) {
-        trimTrailingWhitespace();
-        addNewline();
-      }
-
-    } else if (nodeType == SimpleXmlParser::EndElement) {
-      String name = parser.getName();
-
-      if (isBlockElement(name) || isHeaderElement(name)) {
-        trimTrailingWhitespace();
-        addNewline();
-      }
-
-      // Pop element from stack
-      if (!elementStack.empty()) {
-        elementStack.pop_back();
-        if (!classStack.empty()) {
-          classStack.pop_back();
+      // Handle <br/> - only add newline if line has content
+      if (parser.isEmptyElement() && (name == "br" || name == "hr")) {
+        if (lineHasContent) {
+          buffer += "\n";
+          lineHasContent = false;
+          lineHasNbsp = false;
         }
       }
+    }
+
+    // ========== END ELEMENT ==========
+    else if (nodeType == SimpleXmlParser::EndElement) {
+      String name = parser.getName();
+
+      // Block elements: add newline if line had content OR had &nbsp;
+      if (isBlockElement(name) || isHeaderElement(name)) {
+        if (lineHasContent || lineHasNbsp) {
+          buffer += "\n";
+        }
+        lineHasContent = false;
+        lineHasNbsp = false;
+        pendingParagraphClasses = "";
+        pendingInlineStyle = "";
+        paragraphClassesWritten = false;
+      }
+
+      // Pop from element stack
+      if (!elementStack.empty()) {
+        elementStack.pop_back();
+      }
+    }
+
+    // ========== TEXT NODE ==========
+    else if (nodeType == SimpleXmlParser::Text) {
+      // Skip if inside <head>, <style>, <script>
+      if (isInsideSkippedElement(elementStack)) {
+        continue;
+      }
+
+      // Read and process text
+      String text = readAndDecodeText(parser);
+      if (text.isEmpty()) {
+        continue;
+      }
+
+      // Check for &nbsp; before normalizing (marks intentional spacing)
+      if (text.indexOf('\xA0') >= 0) {
+        lineHasNbsp = true;
+      }
+
+      // Normalize: collapse whitespace, convert nbsp to space
+      text = normalizeWhitespace(text);
+      if (text.isEmpty()) {
+        continue;
+      }
+
+      // Trim leading space if at line start
+      if (!lineHasContent) {
+        text = trimLeadingSpaces(text);
+        if (text.isEmpty()) {
+          continue;
+        }
+      }
+
+      // Write style token at start of paragraph
+      writeParagraphStyleToken(buffer, pendingParagraphClasses, pendingInlineStyle, paragraphClassesWritten);
+
+      // Append text
+      buffer += text;
+      lineHasContent = true;
+    }
+
+    // Periodic flush
+    if (buffer.length() > FLUSH_THRESHOLD) {
+      out.print(buffer);
+      buffer = "";
     }
   }
 
   // Final flush
-  flushBuffer();
+  if (buffer.length() > 0) {
+    out.print(buffer);
+  }
+}
+
+// Helper functions removed - now inlined in performXhtmlToTxtConversion
+// processStartElement, processEndElement, processTextNode are no longer used
+
+bool EpubWordProvider::isInsideSkippedElement(const std::vector<String>& elementStack) {
+  for (const String& elem : elementStack) {
+    if (isSkippedElement(elem)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+String EpubWordProvider::readAndDecodeText(SimpleXmlParser& parser) {
+  String result;
+
+  while (parser.hasMoreTextChars()) {
+    char c = parser.readTextNodeCharForward();
+
+    // Skip carriage returns
+    if (c == '\r') {
+      continue;
+    }
+
+    // Convert tabs to spaces
+    if (c == '\t') {
+      c = ' ';
+    }
+
+    // Decode HTML entities
+    if (c == '&') {
+      String entity = "&";
+      while (parser.hasMoreTextChars()) {
+        char next = parser.peekTextNodeChar();
+        entity += next;
+        parser.readTextNodeCharForward();
+        if (next == ';' || entity.length() > 10) {
+          break;
+        }
+      }
+      result += decodeHtmlEntity(entity);
+    } else {
+      result += c;
+    }
+  }
+
+  return result;
+}
+
+String EpubWordProvider::decodeHtmlEntity(const String& entity) {
+  if (entity == "&nbsp;")
+    return "\xA0";  // Non-breaking space (0xA0) - used to detect intentional blank lines
+  if (entity == "&amp;")
+    return "&";
+  if (entity == "&lt;")
+    return "<";
+  if (entity == "&gt;")
+    return ">";
+  if (entity == "&quot;")
+    return "\"";
+  if (entity == "&apos;")
+    return "'";
+  // Unknown entity - return as-is
+  return entity;
+}
+
+String EpubWordProvider::normalizeWhitespace(const String& text) {
+  String result;
+  bool lastWasSpace = false;
+
+  for (int i = 0; i < text.length(); i++) {
+    char c = text.charAt(i);
+
+    // Convert non-breaking space to regular space
+    if (c == '\xA0') {
+      c = ' ';
+    }
+
+    bool isSpace = (c == ' ' || c == '\n');
+
+    if (isSpace) {
+      if (!lastWasSpace) {
+        result += ' ';
+        lastWasSpace = true;
+      }
+    } else {
+      result += c;
+      lastWasSpace = false;
+    }
+  }
+
+  return result;
+}
+
+void EpubWordProvider::trimTrailingSpaces(String& buffer) {
+  while (buffer.length() > 0) {
+    char last = buffer.charAt(buffer.length() - 1);
+    if (last == ' ' || last == '\t') {
+      buffer = buffer.substring(0, buffer.length() - 1);
+    } else {
+      break;
+    }
+  }
+}
+
+String EpubWordProvider::trimLeadingSpaces(const String& text) {
+  int start = 0;
+  while (start < text.length() && (text.charAt(start) == ' ' || text.charAt(start) == '\n')) {
+    start++;
+  }
+  return text.substring(start);
 }
 
 void EpubWordProvider::writeParagraphStyleToken(String& writeBuffer, const String& pendingParagraphClasses,
-                                                bool& paragraphClassesWritten) {
-  // If this is the beginning of a paragraph and classes haven't been written yet,
-  // write the pending paragraph classes in front of the text line.
-  if (!pendingParagraphClasses.isEmpty() && !paragraphClassesWritten) {
-    // Emit style properties for the paragraph classes as an escaped token
+                                                const String& pendingInlineStyle, bool& paragraphClassesWritten) {
+  // If this is the beginning of a paragraph and styles haven't been written yet,
+  // write the style token in front of the text line.
+  // We check for either class-based styles or inline styles.
+  if ((!pendingParagraphClasses.isEmpty() || !pendingInlineStyle.isEmpty()) && !paragraphClassesWritten) {
+    // Emit style properties for the paragraph as an escaped token
     // Format: ESC[align=center] (ESC = 0x1B) followed by a space
     const CssParser* css = epubReader_ ? epubReader_->getCssParser() : nullptr;
-    if (css) {
-      CssStyle combined = css->getCombinedStyle(pendingParagraphClasses);
-      String styleToken = "";
-      if (combined.hasTextAlign) {
-        styleToken += (char)27;  // ESC
-        styleToken += "[";
-        styleToken += "align=";
-        switch (combined.textAlign) {
-          case TextAlign::Left:
-            styleToken += "left";
-            break;
-          case TextAlign::Right:
-            styleToken += "right";
-            break;
-          case TextAlign::Center:
-            styleToken += "center";
-            break;
-          case TextAlign::Justify:
-            styleToken += "justify";
-            break;
-          default:
-            styleToken += "left";
-            break;
-        }
-        styleToken += "]";
+
+    // Start with class-based styles
+    CssStyle combined;
+    if (css && !pendingParagraphClasses.isEmpty()) {
+      combined = css->getCombinedStyle(pendingParagraphClasses);
+    }
+
+    // Merge inline styles (inline styles take precedence over class styles)
+    if (css && !pendingInlineStyle.isEmpty()) {
+      CssStyle inlineStyle = css->parseInlineStyle(pendingInlineStyle);
+      combined.merge(inlineStyle);
+    }
+
+    String styleToken = "";
+    if (combined.hasTextAlign) {
+      styleToken += (char)27;  // ESC
+      styleToken += "[";
+      styleToken += "align=";
+      switch (combined.textAlign) {
+        case TextAlign::Left:
+          styleToken += "left";
+          break;
+        case TextAlign::Right:
+          styleToken += "right";
+          break;
+        case TextAlign::Center:
+          styleToken += "center";
+          break;
+        case TextAlign::Justify:
+          styleToken += "justify";
+          break;
+        default:
+          styleToken += "left";
+          break;
       }
-      if (styleToken.length() > 0) {
-        styleToken += (char)27;  // trailing ESC
-        writeBuffer += styleToken;
-      }
+      styleToken += "]";
+    }
+    if (styleToken.length() > 0) {
+      styleToken += (char)27;  // trailing ESC
+      writeBuffer += styleToken;
     }
     paragraphClassesWritten = true;
   }

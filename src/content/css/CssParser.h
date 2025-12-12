@@ -47,6 +47,12 @@ class CssParser {
   CssStyle getCombinedStyle(const String& classNames) const;
 
   /**
+   * Parse an inline style attribute (e.g., "text-align: center; color: red;")
+   * Returns a CssStyle with the parsed properties
+   */
+  CssStyle parseInlineStyle(const String& styleAttr) const;
+
+  /**
    * Check if any styles have been loaded
    */
   bool hasStyles() const {

@@ -337,3 +337,65 @@ String CssParser::extractClassName(const String& selector) {
 
   return String("");
 }
+
+CssStyle CssParser::parseInlineStyle(const String& styleAttr) const {
+  CssStyle style;
+
+  if (styleAttr.isEmpty()) {
+    return style;
+  }
+
+  // Parse inline style declarations (semicolon-separated)
+  // Format: "property1: value1; property2: value2;"
+  int propStart = 0;
+  int propLen = styleAttr.length();
+
+  while (propStart < propLen) {
+    int propEnd = styleAttr.indexOf(';', propStart);
+    if (propEnd < 0)
+      propEnd = propLen;
+
+    String prop = styleAttr.substring(propStart, propEnd);
+    prop.trim();
+
+    if (prop.length() > 0) {
+      // Split property into name and value
+      int colonPos = prop.indexOf(':');
+      if (colonPos > 0) {
+        String propName = prop.substring(0, colonPos);
+        String propValue = prop.substring(colonPos + 1);
+        propName.trim();
+        propValue.trim();
+
+        // Convert to lowercase for comparison
+        propName.toLowerCase();
+
+        // Use the same parsing logic as parseProperty
+        // Note: parseProperty is non-const, so we inline the logic here
+        if (propName == "text-align") {
+          String v = propValue;
+          v.toLowerCase();
+          v.trim();
+
+          if (v == "left" || v == "start") {
+            style.textAlign = TextAlign::Left;
+          } else if (v == "right" || v == "end") {
+            style.textAlign = TextAlign::Right;
+          } else if (v == "center") {
+            style.textAlign = TextAlign::Center;
+          } else if (v == "justify") {
+            style.textAlign = TextAlign::Justify;
+          } else {
+            style.textAlign = TextAlign::Left;
+          }
+          style.hasTextAlign = true;
+        }
+        // Add more property parsing here as needed
+      }
+    }
+
+    propStart = propEnd + 1;
+  }
+
+  return style;
+}

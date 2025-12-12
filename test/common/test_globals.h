@@ -145,7 +145,7 @@ inline bool initProvider() {
     return false;
   }
 
-  epub->setChapter(40);
+  epub->setChapter(6);
 
   g_provider = epub;
   return true;

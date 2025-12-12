@@ -322,15 +322,68 @@ void FileWordProvider::setPosition(int index) {
     index = (int)fileSize_;
   index_ = (size_t)index;
   prevIndex_ = index_;
+  // Don't invalidate cache here - getParagraphAlignment will check if we're still in range
 }
 
 void FileWordProvider::reset() {
   index_ = 0;
   prevIndex_ = 0;
+  // Invalidate paragraph alignment cache
+  cachedParagraphStart_ = SIZE_MAX;
+  cachedParagraphEnd_ = SIZE_MAX;
+  cachedParagraphAlignment_ = TextAlign::Left;
 }
 
 TextAlign FileWordProvider::getParagraphAlignment() {
-  return currentParagraphAlignment_;
+  // Check if current position is within cached paragraph range
+  if (cachedParagraphStart_ != SIZE_MAX && index_ >= cachedParagraphStart_ && index_ < cachedParagraphEnd_) {
+    return cachedParagraphAlignment_;
+  }
+  // Need to update cache for new paragraph
+  updateParagraphAlignmentCache();
+  return cachedParagraphAlignment_;
+}
+
+void FileWordProvider::findParagraphBoundaries(size_t pos, size_t& outStart, size_t& outEnd) {
+  // Paragraphs are delimited by newlines
+  // Find start: scan backwards to find newline or beginning of file
+  outStart = 0;
+  if (pos > 0) {
+    for (size_t i = pos; i > 0; --i) {
+      if (charAt(i - 1) == '\n') {
+        outStart = i;
+        break;
+      }
+    }
+  }
+
+  // Find end: scan forwards to find newline or end of file
+  outEnd = fileSize_;
+  for (size_t i = pos; i < fileSize_; ++i) {
+    if (charAt(i) == '\n') {
+      outEnd = i + 1;  // Include the newline in this paragraph
+      break;
+    }
+  }
+}
+
+void FileWordProvider::updateParagraphAlignmentCache() {
+  // Find paragraph boundaries for current position
+  size_t paraStart, paraEnd;
+  findParagraphBoundaries(index_, paraStart, paraEnd);
+
+  // Cache the boundaries
+  cachedParagraphStart_ = paraStart;
+  cachedParagraphEnd_ = paraEnd;
+
+  // Default alignment
+  cachedParagraphAlignment_ = TextAlign::Left;
+
+  // Look for ESC token at start of paragraph
+  if (paraStart < fileSize_) {
+    size_t tokenLen = parseEscTokenAtPos(paraStart, &cachedParagraphAlignment_);
+    (void)tokenLen;  // We just need the alignment to be set
+  }
 }
 
 size_t FileWordProvider::findEscTokenStart(size_t trailingEscPos) {
@@ -359,7 +412,7 @@ size_t FileWordProvider::findEscTokenStart(size_t trailingEscPos) {
   return SIZE_MAX;
 }
 
-size_t FileWordProvider::parseEscTokenAtPos(size_t pos) {
+size_t FileWordProvider::parseEscTokenAtPos(size_t pos, TextAlign* outAlignment) {
   if (pos >= fileSize_)
     return 0;
   if (charAt(pos) != (char)27)  // ESC
@@ -403,16 +456,21 @@ size_t FileWordProvider::parseEscTokenAtPos(size_t pos) {
   String val = content.substring((int)prefix.length());
   // Normalize to lower-case
   val.toLowerCase();
+  TextAlign parsedAlignment = TextAlign::Left;
   if (val == "left")
-    currentParagraphAlignment_ = TextAlign::Left;
+    parsedAlignment = TextAlign::Left;
   else if (val == "right")
-    currentParagraphAlignment_ = TextAlign::Right;
+    parsedAlignment = TextAlign::Right;
   else if (val == "center")
-    currentParagraphAlignment_ = TextAlign::Center;
+    parsedAlignment = TextAlign::Center;
   else if (val == "justify")
-    currentParagraphAlignment_ = TextAlign::Justify;
+    parsedAlignment = TextAlign::Justify;
+
+  // Store result in provided pointer or default member
+  if (outAlignment)
+    *outAlignment = parsedAlignment;
   else
-    currentParagraphAlignment_ = TextAlign::Left;
+    cachedParagraphAlignment_ = parsedAlignment;
 
   // Consume token + optional following space
   size_t consumed = (closePos - pos + 1);

@@ -91,12 +91,20 @@ class EpubWordProvider : public WordProvider {
   // Common conversion logic used by both convertXhtmlToTxt and convertXhtmlStreamToTxt
   void performXhtmlToTxtConversion(SimpleXmlParser& parser, File& out);
 
-  // Emit style properties for a paragraph's classes as an escaped token written to buffer
+  // Emit style properties for a paragraph's classes and inline styles as an escaped token written to buffer
   void writeParagraphStyleToken(String& writeBuffer, const String& pendingParagraphClasses,
-                                bool& paragraphClassesWritten);
+                                const String& pendingInlineStyle, bool& paragraphClassesWritten);
 
   // Helper to create directories recursively for a given path
   bool createDirRecursive(const String& path);
+
+  // Text processing helpers
+  bool isInsideSkippedElement(const std::vector<String>& elementStack);
+  String readAndDecodeText(SimpleXmlParser& parser);
+  String decodeHtmlEntity(const String& entity);
+  String normalizeWhitespace(const String& text);
+  void trimTrailingSpaces(String& buffer);
+  String trimLeadingSpaces(const String& text);
 
   bool valid_ = false;
   bool isEpub_ = false;                 // True if source is EPUB, false if direct XHTML

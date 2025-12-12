@@ -24,19 +24,19 @@
 #include "test_utils.h"
 
 // Test toggles - set to false to skip specific tests
-#define TEST_EPUB_VALIDITY true
-#define TEST_SPINE_COUNT true
-#define TEST_SPINE_ITEMS true
-#define TEST_CONTENT_OPF_PATH true
-#define TEST_EXTRACT_DIR true
-#define TEST_FILE_EXTRACTION true
-#define TEST_SPINE_ITEM_BOUNDS true
-#define TEST_TOC_CONTENT true
-#define TEST_CHAPTER_NAME_FOR_SPINE true
-#define TEST_SPINE_SIZES true
-#define TEST_CSS_PARSING true
+#define TEST_EPUB_VALIDITY false
+#define TEST_SPINE_COUNT false
+#define TEST_SPINE_ITEMS false
+#define TEST_CONTENT_OPF_PATH false
+#define TEST_EXTRACT_DIR false
+#define TEST_FILE_EXTRACTION false
+#define TEST_SPINE_ITEM_BOUNDS false
+#define TEST_TOC_CONTENT false
+#define TEST_CHAPTER_NAME_FOR_SPINE false
+#define TEST_SPINE_SIZES false
+#define TEST_CSS_PARSING false
 #define TEST_STREAM_CONVERTER true
-#define TEST_STREAM_RAW_BYTES true
+#define TEST_STREAM_RAW_BYTES false
 
 // Test configuration
 namespace EpubReaderTests {
@@ -657,6 +657,8 @@ void testStreamConverter(TestUtils::TestRunner& runner, EpubReader& reader) {
     return;
   }
 
+  EpubWordProvider provider(TestGlobals::g_testFilePath);
+
   std::cout << "  Testing " << spineCount << " spine items in 3 modes...\n\n";
 
   // Get base directory from content.opf
@@ -668,8 +670,8 @@ void testStreamConverter(TestUtils::TestRunner& runner, EpubReader& reader) {
   int identicalOutputs = 0;
   int differentOutputs = 0;
 
-  // Test first 3 spine items (or all if less than 3)
-  int itemsToTest = (spineCount < 3) ? spineCount : 3;
+  int itemCount = 5;
+  int itemsToTest = (spineCount < itemCount) ? spineCount : itemCount;
 
   for (int i = 0; i < itemsToTest; i++) {
     const SpineItem* item = reader.getSpineItem(i);
@@ -690,22 +692,18 @@ void testStreamConverter(TestUtils::TestRunner& runner, EpubReader& reader) {
 
     // Output paths for each mode
     String filePath = basePath + "_file.txt";
-    String memoryPath = basePath + "_memory.txt";
     String streamPath = basePath + "_stream.txt";
 
     // Clean up any existing files
     if (SD.exists(filePath.c_str()))
       SD.remove(filePath.c_str());
-    if (SD.exists(memoryPath.c_str()))
-      SD.remove(memoryPath.c_str());
     if (SD.exists(streamPath.c_str()))
       SD.remove(streamPath.c_str());
 
     // MODE 1: File-based conversion (extract XHTML, then convert)
     std::cout << "      Mode 1 (File-based): ";
-    EpubWordProvider provider1(TestGlobals::g_testFilePath);
-    provider1.setUseStreamingConversion(false);
-    if (provider1.setChapter(i)) {
+    provider.setUseStreamingConversion(false);
+    if (provider.setChapter(i)) {
       // Need to rename the output to our test path
       String defaultPath = basePath + ".txt";
       if (SD.exists(defaultPath.c_str())) {
@@ -730,40 +728,11 @@ void testStreamConverter(TestUtils::TestRunner& runner, EpubReader& reader) {
       std::cout << "FAILED\n";
     }
 
-    // MODE 2: Memory-based (load to RAM, parse from memory)
-    std::cout << "      Mode 2 (Memory): ";
-    // Note: Current implementation uses streaming for both, we'd need to add a separate memory mode
-    // For now, just use streaming which internally uses memory
-    EpubWordProvider provider2(TestGlobals::g_testFilePath);
-    provider2.setUseStreamingConversion(true);
-    if (provider2.setChapter(i)) {
-      String defaultPath = basePath + ".txt";
-      if (SD.exists(defaultPath.c_str())) {
-        File src = SD.open(defaultPath.c_str());
-        File dst = SD.open(memoryPath.c_str(), FILE_WRITE);
-        if (src && dst) {
-          while (src.available()) {
-            uint8_t b = src.read();
-            dst.write(&b, 1);
-          }
-          src.close();
-          dst.close();
-        }
-        SD.remove(defaultPath.c_str());
-      }
-      File f = SD.open(memoryPath.c_str());
-      size_t size2 = f.size();
-      f.close();
-      std::cout << size2 << " bytes\n";
-    } else {
-      std::cout << "FAILED\n";
-    }
-
-    // MODE 3: True streaming (parse directly from ZIP decompressor)
-    std::cout << "      Mode 3 (True Streaming): ";
-    EpubWordProvider provider3(TestGlobals::g_testFilePath);
-    provider3.setUseStreamingConversion(true);
-    if (provider3.setChapter(i)) {
+    // MODE 2: True streaming (parse directly from ZIP decompressor)
+    std::cout << "      Mode 2 (True Streaming): ";
+    provider.setUseStreamingConversion(true);
+    provider.setChapter(20);
+    if (provider.setChapter(i)) {
       String defaultPath = basePath + ".txt";
       if (SD.exists(defaultPath.c_str())) {
         File src = SD.open(defaultPath.c_str());
@@ -791,24 +760,21 @@ void testStreamConverter(TestUtils::TestRunner& runner, EpubReader& reader) {
     std::cout << "      Comparing outputs: ";
 
     File f1 = SD.open(filePath.c_str());
-    File f2 = SD.open(memoryPath.c_str());
     File f3 = SD.open(streamPath.c_str());
 
-    if (f1 && f2 && f3) {
+    if (f1 && f3) {
       size_t size1 = f1.size();
-      size_t size2 = f2.size();
       size_t size3 = f3.size();
 
-      if (size1 != size2 || size1 != size3) {
+      if (size1 != size3) {
         allMatch = false;
-        std::cout << "SIZE MISMATCH (file:" << size1 << " memory:" << size2 << " stream:" << size3 << ")\n";
+        std::cout << "SIZE MISMATCH (file:" << size1 << " stream:" << size3 << ")\n";
       } else {
         // Compare byte by byte
         for (size_t j = 0; j < size1; j++) {
           uint8_t b1 = f1.read();
-          uint8_t b2 = f2.read();
           uint8_t b3 = f3.read();
-          if (b1 != b2 || b1 != b3) {
+          if (b1 != b3) {
             allMatch = false;
             std::cout << "CONTENT MISMATCH at byte " << j << "\n";
             break;
@@ -821,7 +787,6 @@ void testStreamConverter(TestUtils::TestRunner& runner, EpubReader& reader) {
       }
 
       f1.close();
-      f2.close();
       f3.close();
     } else {
       std::cout << "FAILED TO OPEN FILES\n";

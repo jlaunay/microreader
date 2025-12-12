@@ -50,12 +50,22 @@ class FileWordProvider : public WordProvider {
   size_t bufSize_ = 0;
   size_t bufStart_ = 0;  // file offset of buf_[0]
   size_t bufLen_ = 0;    // valid bytes in buf_
-  TextAlign currentParagraphAlignment_ = TextAlign::Left;
+
+  // Paragraph alignment caching
+  TextAlign cachedParagraphAlignment_ = TextAlign::Left;
+  size_t cachedParagraphStart_ = SIZE_MAX;  // SIZE_MAX = invalid/not cached
+  size_t cachedParagraphEnd_ = SIZE_MAX;
+
+  // Find paragraph boundaries containing the given position
+  void findParagraphBoundaries(size_t pos, size_t& outStart, size_t& outEnd);
+  // Update the paragraph alignment cache for current position
+  void updateParagraphAlignmentCache();
 
   // Parse and skip an ESC style token starting at `pos` (forward direction).
   // Token format: ESC [ content ] ESC
   // Returns number of characters consumed by the token (0 if not a token).
-  size_t parseEscTokenAtPos(size_t pos);
+  // If outAlignment is provided, writes the parsed alignment there instead of currentParagraphAlignment_
+  size_t parseEscTokenAtPos(size_t pos, TextAlign* outAlignment = nullptr);
 
   // Find the start of an ESC token when positioned at its trailing ESC.
   // Returns the position of the leading ESC, or SIZE_MAX if not found.
