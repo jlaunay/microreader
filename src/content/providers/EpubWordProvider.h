@@ -70,6 +70,17 @@ class EpubWordProvider : public WordProvider {
   }
 
  private:
+  struct ConversionTimings {
+    unsigned long startStream = 0;
+    unsigned long parserOpen = 0;
+    unsigned long outOpen = 0;
+    unsigned long conversion = 0;
+    unsigned long parserClose = 0;
+    unsigned long endStream = 0;
+    unsigned long closeOut = 0;
+    unsigned long total = 0;
+    size_t bytes = 0;
+  };
   // Opens a specific chapter (spine item) for reading
   bool openChapter(int chapterIndex);
 
@@ -86,10 +97,10 @@ class EpubWordProvider : public WordProvider {
   bool isInlineStyleElement(const String& name);
 
   // Convert an XHTML file to a plain-text file suitable for FileWordProvider.
-  bool convertXhtmlToTxt(const String& srcPath, String& outTxtPath);
+  bool convertXhtmlToTxt(const String& srcPath, String& outTxtPath, ConversionTimings* timings = nullptr);
 
   // Convert XHTML from EPUB stream to plain-text file (no intermediate XHTML file)
-  bool convertXhtmlStreamToTxt(const char* epubFilename, String& outTxtPath);
+  bool convertXhtmlStreamToTxt(const char* epubFilename, String& outTxtPath, ConversionTimings* timings = nullptr);
 
   // Common conversion logic used by both convertXhtmlToTxt and convertXhtmlStreamToTxt
   void performXhtmlToTxtConversion(SimpleXmlParser& parser, File& out);

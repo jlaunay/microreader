@@ -492,17 +492,16 @@ void TextViewerScreen::openFile(const String& sdPath) {
   }
 
   // Set chapter first (if provider supports it), then position within chapter
+  unsigned long provStart = millis();
   if (provider->hasChapters() && currentChapter > 0) {
     provider->setChapter(currentChapter);
   }
   provider->setPosition(pageStartIndex);
+  unsigned long provMs = millis() - provStart;
+  Serial.printf("  Provider setup took  %lu ms\n", provMs);
 
   unsigned long endTime = millis();
-  Serial.print("Opened file ");
-  Serial.print(sdPath.c_str());
-  Serial.print(" in ");
-  Serial.print(endTime - startTime);
-  Serial.println(" ms");
+  Serial.printf("Opened file  %s  in  %lu ms\n", sdPath.c_str(), endTime - startTime);
 }
 
 void TextViewerScreen::savePositionToFile() {

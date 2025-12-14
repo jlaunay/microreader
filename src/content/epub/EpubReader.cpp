@@ -62,6 +62,9 @@ EpubReader::EpubReader(const char* epubPath)
     : epubPath_(epubPath), valid_(false), reader_(nullptr), spine_(nullptr), spineCount_(0) {
   Serial.printf("\n=== EpubReader: Opening %s ===\n", epubPath);
 
+  // measure start time
+  unsigned long startTime = millis();
+
   // Verify file exists
   File testFile = SD.open(epubPath);
   if (!testFile) {
@@ -70,7 +73,9 @@ EpubReader::EpubReader(const char* epubPath)
   }
   size_t fileSize = testFile.size();
   testFile.close();
-  Serial.printf("EPUB file verified, size: %u bytes\n", fileSize);
+  Serial.printf("  EPUB file verified, size: %u bytes\n", fileSize);
+
+  Serial.printf("  Time taken to verify EPUB file:  %lu ms\n", millis() - startTime);
 
   // Create extraction directory based on EPUB filename
   String epubFilename = String(epubPath);
@@ -91,7 +96,7 @@ EpubReader::EpubReader(const char* epubPath)
 #else
   extractDir_ = "/microreader/epub_" + epubFilename;
 #endif
-  Serial.printf("Extract directory: %s\n", extractDir_.c_str());
+  Serial.printf("  Extract directory: %s\n", extractDir_.c_str());
 
   if (!ensureExtractDirExists()) {
     return;
@@ -128,7 +133,9 @@ EpubReader::EpubReader(const char* epubPath)
   }
 
   valid_ = true;
-  Serial.println("EpubReader initialized successfully\\n");
+  unsigned long initMs = millis() - startTime;
+  Serial.printf("  EpubReader init took  %lu ms\n", initMs);
+  Serial.println("EpubReader initialized successfully");
 }
 
 EpubReader::~EpubReader() {
@@ -165,7 +172,7 @@ bool EpubReader::openEpub() {
     return false;
   }
 
-  Serial.println("EPUB opened for reading");
+  Serial.println("  EPUB opened for reading");
   return true;
 }
 
@@ -173,7 +180,7 @@ void EpubReader::closeEpub() {
   if (reader_) {
     epub_close(reader_);
     reader_ = nullptr;
-    Serial.println("EPUB closed");
+    Serial.println("  EPUB closed");
   }
 }
 
@@ -197,7 +204,7 @@ bool EpubReader::isFileExtracted(const char* filename) {
   String path = getExtractedPath(filename);
   bool exists = SD.exists(path.c_str());
   if (exists) {
-    Serial.printf("File already extracted: %s\n", filename);
+    Serial.printf("  File already extracted: %s\n", filename);
   }
   return exists;
 }
@@ -263,8 +270,11 @@ bool EpubReader::extractFile(const char* filename) {
     return false;
   }
 
+  unsigned long t0 = millis();
   err = epub_extract_streaming(reader_, fileIndex, extract_to_file_callback, nullptr, 4096);
   g_extract_file.close();
+  unsigned long extractMs = millis() - t0;
+  Serial.printf("  Extraction took  %lu ms\n", extractMs);
 
   if (err != EPUB_OK) {
     Serial.printf("ERROR: Extraction failed: %s\n", epub_get_error_string(err));
@@ -392,7 +402,7 @@ bool EpubReader::parseContainer() {
     return false;
   }
 
-  Serial.printf("Parsing container: %s\n", containerPath.c_str());
+  Serial.printf("  Parsing container: %s\n", containerPath.c_str());
 
   // Parse container.xml to get content.opf path
   // Allocate parser on heap to avoid stack overflow (parser has 8KB buffer)
@@ -416,9 +426,9 @@ bool EpubReader::parseContainer() {
     return false;
   }
 
-  Serial.printf("Found content.opf: %s\n", contentOpfPath_.c_str());
+  Serial.printf("    Found content.opf: %s\n", contentOpfPath_.c_str());
   unsigned long endTime = millis();
-  Serial.printf("Container parsing took %lu ms\n", endTime - startTime);
+  Serial.printf("    Container parsing took  %lu ms\n", endTime - startTime);
 
   return true;
 }
@@ -442,7 +452,7 @@ bool EpubReader::parseContentOpf() {
     Serial.println("ERROR: Failed to get content.opf path");
     return false;
   }
-  Serial.printf("Parsing content.opf: %s\n", opfPath.c_str());
+  Serial.printf("  Parsing content.opf: %s\n", opfPath.c_str());
 
   // Open parser once for the entire parsing
   SimpleXmlParser* parser = new SimpleXmlParser();
@@ -452,6 +462,7 @@ bool EpubReader::parseContentOpf() {
     return false;
   }
 
+  unsigned long manifestStart = millis();
   String tocId = "";
   std::vector<ManifestItem> manifest;
   std::vector<String> spineIdrefs;
@@ -477,7 +488,7 @@ bool EpubReader::parseContentOpf() {
           String href = parser->getAttribute("href");
           if (!href.isEmpty()) {
             cssFiles_.push_back(href);
-            Serial.printf("Found CSS file: %s\n", href.c_str());
+            Serial.printf("    Found CSS file: %s\n", href.c_str());
           }
         }
       } else if (strcasecmp_helper(name, "itemref")) {
@@ -489,6 +500,9 @@ bool EpubReader::parseContentOpf() {
     }
   }
 
+  unsigned long manifestMs = millis() - manifestStart;
+  Serial.printf("  Manifest parsing took  %lu ms\n", manifestMs);
+
   parser->close();
   delete parser;
 
@@ -497,7 +511,7 @@ bool EpubReader::parseContentOpf() {
     for (auto& item : manifest) {
       if (item.id == tocId) {
         tocNcxPath_ = item.href;
-        Serial.printf("Found toc.ncx reference: %s\n", tocNcxPath_.c_str());
+        Serial.printf("    Found toc.ncx reference: %s\n", tocNcxPath_.c_str());
         break;
       }
     }
@@ -525,6 +539,7 @@ bool EpubReader::parseContentOpf() {
   spineOffsets_ = new size_t[spineCount_];
   totalBookSize_ = 0;
   if (openEpub()) {
+    unsigned long spineStart = millis();
     String baseDir = "";
     int lastSlash = contentOpfPath_.lastIndexOf('/');
     if (lastSlash >= 0) {
@@ -551,11 +566,13 @@ bool EpubReader::parseContentOpf() {
       }
     }
     closeEpub();
+    unsigned long spineMs = millis() - spineStart;
+    Serial.printf("  Spine size calculation took  %lu ms\n", spineMs);
   }
 
   unsigned long endTime = millis();
-  Serial.printf("\nSpine parsed successfully: %d items, total size: %u bytes\n", spineCount_, totalBookSize_);
-  Serial.printf("Content.opf parsing took %lu ms\n", endTime - startTime);
+  Serial.printf("  Spine parsed successfully: %d items, total size: %u bytes\n", spineCount_, totalBookSize_);
+  Serial.printf("  Content.opf parsing took  %lu ms\n", endTime - startTime);
   return true;
 }
 
@@ -589,7 +606,7 @@ bool EpubReader::parseTocNcx() {
     return false;
   }
 
-  Serial.printf("Parsing toc.ncx: %s\n", extractedTocPath.c_str());
+  Serial.printf("  Parsing toc.ncx: %s\n", extractedTocPath.c_str());
 
   SimpleXmlParser* parser = new SimpleXmlParser();
 
@@ -703,7 +720,7 @@ bool EpubReader::parseTocNcx() {
   parser->close();
   delete parser;
 
-  Serial.printf("TOC parsed successfully: %d chapters/sections\n", (int)toc_.size());
+  Serial.printf("    TOC parsed successfully: %d chapters/sections\n", (int)toc_.size());
 
   // // Print all TOC elements
   // for (int i = 0; i < (int)toc_.size(); i++) {
@@ -715,7 +732,7 @@ bool EpubReader::parseTocNcx() {
   // }
 
   unsigned long endTime = millis();
-  Serial.printf("TOC parsing took %lu ms\n", endTime - startTime);
+  Serial.printf("    TOC parsing took  %lu ms\n", endTime - startTime);
 
   return true;
 }
@@ -760,11 +777,11 @@ bool EpubReader::parseCssFiles() {
     }
   }
 
-  Serial.printf("CSS parsing complete: %d/%d files parsed, %d rules loaded\n", successCount, cssFiles_.size(),
+  Serial.printf("  CSS parsing complete: %d/%d files parsed, %d rules loaded\n", successCount, cssFiles_.size(),
                 cssParser_->getStyleCount());
 
   unsigned long endTime = millis();
-  Serial.printf("CSS parsing took %lu ms\n", endTime - startTime);
+  Serial.printf("CSS parsing took  %lu ms\n", endTime - startTime);
 
   return successCount > 0;
 }

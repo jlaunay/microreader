@@ -155,7 +155,7 @@ bool CssParser::parseFile(const char* filepath) {
   }
 
   file.close();
-  Serial.printf("CssParser: Loaded %d style rules\n", styleMap_.size());
+  Serial.printf("  CssParser: Loaded %d style rules\n", styleMap_.size());
   return true;
 }
 

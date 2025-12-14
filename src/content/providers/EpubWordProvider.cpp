@@ -126,7 +126,7 @@ bool EpubWordProvider::isInlineStyleElement(const String& name) {
   return name == "b" || name == "strong" || name == "i" || name == "em" || name == "span";
 }
 
-bool EpubWordProvider::convertXhtmlToTxt(const String& srcPath, String& outTxtPath) {
+bool EpubWordProvider::convertXhtmlToTxt(const String& srcPath, String& outTxtPath, ConversionTimings* timings) {
   if (srcPath.isEmpty())
     return false;
 
@@ -147,21 +147,53 @@ bool EpubWordProvider::convertXhtmlToTxt(const String& srcPath, String& outTxtPa
 
   // Open input and output files
   SimpleXmlParser parser;
+  unsigned long totalStartMs = millis();
+  unsigned long t0 = millis();
   if (!parser.open(srcPath.c_str()))
     return false;
+  unsigned long parserOpenMs = millis() - t0;
+  if (timings)
+    timings->parserOpen = parserOpenMs;
 
+  t0 = millis();
   File out = SD.open(dest.c_str(), FILE_WRITE);
+  unsigned long outOpenMs = millis() - t0;
   if (!out) {
     parser.close();
     return false;
   }
+  Serial.printf("  Output file open took  %lu ms\n", outOpenMs);
+  if (timings)
+    timings->outOpen = outOpenMs;
 
   // Perform the conversion using common logic
+  t0 = millis();
   performXhtmlToTxtConversion(parser, out);
+  unsigned long conversionMs = millis() - t0;
+  if (timings)
+    timings->conversion = conversionMs;
 
-  // Cleanup and close
+  // Cleanup and close (timed)
+  t0 = millis();
   parser.close();
+  unsigned long parserCloseMs = millis() - t0;
+  if (timings)
+    timings->parserClose = parserCloseMs;
+  t0 = millis();
   out.close();
+  unsigned long closeOutMs = millis() - t0;
+  if (timings)
+    timings->closeOut = closeOutMs;
+  unsigned long totalMs = millis() - totalStartMs;
+  if (timings) {
+    timings->total = totalMs;
+    timings->bytes = out.size();
+  }
+  Serial.printf(
+      "Converted XHTML to TXT: %s  —  total = %lu ms  ( parserOpen = %lu, outOpen = %lu, conversion = %lu, parserClose "
+      "= %lu, "
+      "closeOut = %lu )\n",
+      dest.c_str(), totalMs, parserOpenMs, outOpenMs, conversionMs, parserCloseMs, closeOutMs);
   outTxtPath = dest;
   return true;
 }
@@ -634,7 +666,8 @@ static int parser_stream_callback(char* buffer, size_t maxSize, void* userData) 
   return bytesRead;
 }
 
-bool EpubWordProvider::convertXhtmlStreamToTxt(const char* epubFilename, String& outTxtPath) {
+bool EpubWordProvider::convertXhtmlStreamToTxt(const char* epubFilename, String& outTxtPath,
+                                               ConversionTimings* timings) {
   if (!epubReader_) {
     return false;
   }
@@ -655,8 +688,12 @@ bool EpubWordProvider::convertXhtmlStreamToTxt(const char* epubFilename, String&
   }
 
   // Start pull-based streaming from EPUB
-  unsigned long startMs = millis();
+  unsigned long totalStartMs = millis();
+  unsigned long t0 = millis();
   epub_stream_context* epubStream = epubReader_->startStreaming(epubFilename, 8192);
+  unsigned long startStreamingMs = millis() - t0;
+  if (timings)
+    timings->startStream = startStreamingMs;
   if (!epubStream) {
     Serial.println("ERROR: Failed to start EPUB streaming");
     return false;
@@ -668,37 +705,73 @@ bool EpubWordProvider::convertXhtmlStreamToTxt(const char* epubFilename, String&
 
   // Open parser in streaming mode
   SimpleXmlParser parser;
+  t0 = millis();
   if (!parser.openFromStream(parser_stream_callback, &streamCtx)) {
     epub_end_streaming(epubStream);
     Serial.println("ERROR: Failed to open parser in streaming mode");
     return false;
   }
+  unsigned long parserOpenMs = millis() - t0;
+  if (timings)
+    timings->parserOpen = parserOpenMs;
 
-  // Remove existing file to ensure clean write
+  // Remove existing file to ensure clean write (timed)
+  t0 = millis();
   if (SD.exists(dest.c_str())) {
     SD.remove(dest.c_str());
   }
-
   File out = SD.open(dest.c_str(), FILE_WRITE);
+  unsigned long outOpenMs = millis() - t0;
   if (!out) {
     Serial.printf("ERROR: Failed to open output TXT file '%s' for writing\n", dest.c_str());
     parser.close();
     epub_end_streaming(epubStream);
     return false;
   }
+  Serial.printf("  Output file open took  %lu ms\n", outOpenMs);
+  if (timings)
+    timings->outOpen = outOpenMs;
 
-  // Perform the conversion using common logic
-  // Parser pulls data from EPUB stream as needed
+  // Perform the conversion using common logic (timed)
+  t0 = millis();
   performXhtmlToTxtConversion(parser, out);
+  unsigned long conversionMs = millis() - t0;
+  if (timings)
+    timings->conversion = conversionMs;
 
   // Check how much was written
   size_t bytesWritten = out.size();
 
+  // Close parser and streaming in separate timed steps
+  t0 = millis();
   parser.close();
+  unsigned long parserCloseMs = millis() - t0;
+  if (timings)
+    timings->parserClose = parserCloseMs;
+
+  t0 = millis();
   epub_end_streaming(epubStream);
+  unsigned long endStreamMs = millis() - t0;
+  if (timings)
+    timings->endStream = endStreamMs;
+
+  t0 = millis();
   out.close();
-  unsigned long elapsedMs = millis() - startMs;
-  Serial.printf("Converted XHTML to TXT (streamed): %s — %lu ms\n", dest.c_str(), elapsedMs);
+  unsigned long closeOutMs = millis() - t0;
+  if (timings)
+    timings->closeOut = closeOutMs;
+
+  unsigned long totalMs = millis() - totalStartMs;
+  if (timings) {
+    timings->total = totalMs;
+    timings->bytes = (unsigned int)bytesWritten;
+  }
+  Serial.printf(
+      "Converted XHTML to TXT (streamed): %s  —  total = %lu ms  ( startStream = %lu, parserOpen = %lu, outOpen = %lu, "
+      "conversion = "
+      "%lu, parserClose = %lu, endStream = %lu, closeOut = %lu )  —  %u bytes\n",
+      dest.c_str(), totalMs, startStreamingMs, parserOpenMs, (timings ? timings->outOpen : 0), conversionMs,
+      parserCloseMs, endStreamMs, closeOutMs, (unsigned int)bytesWritten);
   outTxtPath = dest;
   return true;
 }
@@ -738,21 +811,38 @@ bool EpubWordProvider::openChapter(int chapterIndex) {
 
   // Convert XHTML to text file using selected method
   String txtPath;
+  unsigned long convStart = millis();
   if (useStreamingConversion_) {
     // Stream XHTML from EPUB directly to memory and convert (no intermediate XHTML file)
-    if (!convertXhtmlStreamToTxt(fullHref.c_str(), txtPath)) {
+    ConversionTimings t;
+    if (!convertXhtmlStreamToTxt(fullHref.c_str(), txtPath, &t)) {
       return false;
     }
+    // Print detailed breakdown for chapter-level conversion
+    Serial.printf(
+        "    Converted XHTML to TXT (streamed): %s  —  total = %lu ms  ( startStream = %lu, parserOpen = %lu, outOpen "
+        "= %lu, conversion = %lu, parserClose = %lu, endStream = %lu, closeOut = %lu )  —  %u bytes\n",
+        txtPath.c_str(), t.total, t.startStream, t.parserOpen, t.outOpen, t.conversion, t.parserClose, t.endStream,
+        t.closeOut, (unsigned int)t.bytes);
   } else {
     // Extract XHTML file first, then convert from file
     String xhtmlPath = epubReader_->getFile(fullHref.c_str());
     if (xhtmlPath.isEmpty()) {
       return false;
     }
-    if (!convertXhtmlToTxt(xhtmlPath, txtPath)) {
+    ConversionTimings t;
+    if (!convertXhtmlToTxt(xhtmlPath, txtPath, &t)) {
       return false;
     }
+    // Print detailed breakdown for chapter-level conversion when using file-based conversion
+    Serial.printf(
+        "    Converted XHTML to TXT: %s  —  total = %lu ms  ( parserOpen = %lu, outOpen = %lu, conversion = %lu, "
+        "parserClose = %lu, closeOut = %lu )  —  %u bytes\n",
+        txtPath.c_str(), t.total, t.parserOpen, t.outOpen, t.conversion, t.parserClose, t.closeOut,
+        (unsigned int)t.bytes);
   }
+  unsigned long conversionAndExtractMs = millis() - convStart;
+  Serial.printf("  Chapter conversion + extract took  %lu ms\n", conversionAndExtractMs);
 
   String newXhtmlPath = fullHref;  // Keep for tracking
 
@@ -761,7 +851,10 @@ bool EpubWordProvider::openChapter(int chapterIndex) {
     delete fileProvider_;
     fileProvider_ = nullptr;
   }
+  unsigned long fileProvStart = millis();
   fileProvider_ = new FileWordProvider(txtPath.c_str(), bufSize_);
+  unsigned long fileProvMs = millis() - fileProvStart;
+  Serial.printf("    FileWordProvider init took  %lu ms\n", fileProvMs);
   if (!fileProvider_ || !fileProvider_->isValid()) {
     if (fileProvider_) {
       delete fileProvider_;
