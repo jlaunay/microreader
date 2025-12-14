@@ -256,3 +256,84 @@ def render_preview_from_grayscale(
     big_img.save(output_path)
     print(f"Grayscale Preview saved to: {output_path}")
     return 0
+
+
+def render_combined_preview(
+    codes: List[int], glyphs: List[dict], bitmap_all: List[int], output_path: str
+) -> int:
+    """Render a combined preview merging BW and grayscale data into one image."""
+    combined_images = []
+    offset = 0
+
+    for idx, ch in enumerate(codes):
+        g = glyphs[idx]
+        w, h = g["width"], g["height"]
+
+        # Generate BW pixel values
+        per_glyph_bytes = bytes_per_row(w) * h
+        bm = bitmap_all[offset : offset + per_glyph_bytes]
+        offset += per_glyph_bytes
+        pixel_values_bw = []
+        bpr = bytes_per_row(w)
+        for y in range(h):
+            for x in range(0, w, 8):
+                byte_idx = y * bpr + x // 8
+                byte_val = bm[byte_idx]
+                for i in range(8):
+                    if x + i < w:
+                        bit = (byte_val >> (7 - i)) & 1
+                        pixel_values_bw.append(bit)
+
+        # Generate grayscale pixel values
+        pixel_values_gray = g["pixel_values"]
+        gray_pixels = []
+        for val in pixel_values_gray:
+            if val == 0:
+                gray_pixels.append(255)
+            elif val == 1:
+                gray_pixels.append(170)
+            elif val == 2:
+                gray_pixels.append(110)
+            elif val == 3:
+                gray_pixels.append(50)
+            else:
+                gray_pixels.append(255)
+
+        # Render BW data: 1=white, 0=black
+        PINK = (255, 192, 203)
+        bw_pixels = []
+        for i in range(len(pixel_values_bw)):
+            bw_val = pixel_values_bw[i]
+            # BW: 1 = white (or pink for visibility), 0 = black
+            if gray_pixels[i] < 255:
+                # If grayscale pixel is not white, show black in BW
+                bw_pixels.append((gray_pixels[i], gray_pixels[i], gray_pixels[i]))
+            elif bw_val == 1:
+                bw_pixels.append(PINK)
+            else:
+                bw_pixels.append((0, 0, 0))
+
+        bw_img = Image.new("RGB", (w, h))
+        bw_img.putdata(bw_pixels)
+        combined_images.append(bw_img)
+
+    # Arrange all combined glyphs in a grid
+    num_glyphs = len(combined_images)
+    cols = int(num_glyphs**0.5) + 1
+    rows = (num_glyphs + cols - 1) // cols
+    max_w = max(img.width for img in combined_images) if combined_images else 1
+    max_h = max(img.height for img in combined_images) if combined_images else 1
+    WHITE = (255, 255, 255)
+    big_img = Image.new("RGB", (cols * max_w, rows * max_h), WHITE)
+
+    for idx, img in enumerate(combined_images):
+        row = idx // cols
+        col = idx % cols
+        x = col * max_w
+        y = row * max_h
+        big_img.paste(img, (x, y))
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    big_img.save(output_path)
+    print(f"Combined preview (BW + Grayscale) saved to: {output_path}")
+    return 0

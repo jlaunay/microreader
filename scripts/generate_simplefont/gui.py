@@ -27,7 +27,7 @@ class GlyphPreviewGUI:
         self.root.title("Glyph Preview GUI")
 
         # Variables
-        default_ttf = os.path.join(repo_root, "scripts", "fonts", "NotoSans.ttf")
+        default_ttf = os.path.join(repo_root, "resources", "fonts", "NotoSans.ttf")
         print(f"Default TTF path: {default_ttf}")
         self.ttf_path = tk.StringVar(value=default_ttf)
         self.size = tk.IntVar(value=24)
@@ -409,7 +409,7 @@ class GlyphPreviewGUI:
         size = self.size.get()
         name = self.export_name.get() or os.path.splitext(os.path.basename(ttf))[0]
         # default chars file
-        chars_file = os.path.join(repo_root, "data", "chars_input.txt")
+        chars_file = os.path.join(repo_root, "resources", "chars_input.txt")
         if not os.path.exists(chars_file):
             # ask user for file
             chars_file = filedialog.askopenfilename(

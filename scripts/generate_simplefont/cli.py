@@ -34,6 +34,7 @@ from scripts.generate_simplefont.render import (
     render_glyph_from_ttf,
     render_preview_from_data,
     render_preview_from_grayscale,
+    render_combined_preview,
 )
 from scripts.generate_simplefont.writer import generate_header, write_header_from_data
 from scripts.generate_simplefont.bitmap_utils import (
@@ -146,7 +147,7 @@ def main(argv=None):
         args.out = os.path.join(repo_root, "src", "Fonts", f"{args.name}.h")
     if not args.preview_output:
         args.preview_output = os.path.join(
-            os.path.dirname(args.out), f"{args.name}.png"
+            os.path.dirname(args.out), f"{args.name}_combined.png"
         )
 
     # Check if font is variable and print axes
@@ -321,28 +322,21 @@ def main(argv=None):
             yadvance,
             grayscale=args.grayscale,
         )
-        # optional previews: render both a TTF grayscale preview and a 1-bit
-        # preview generated from the packed bitmap data. Both files are written
-        # next to the requested path using suffixes `_ttf` and `_bitmap`.
+        # optional preview: render a combined image showing BW and grayscale side-by-side
         if args.preview_output:
-            base, ext = os.path.splitext(args.preview_output)
-            bitmap_preview = f"{base}_bitmap{ext}"
-            gray_preview = f"{base}_gray{ext}"
-
-            # TTF preview not implemented
-            print("TTF preview not implemented")
-
-            # Also render the 1-bit preview from the generated bitmap bytes so
-            # callers can compare exact on-device rendering appearance.
-            rc2 = render_preview_from_data(codes, glyphs, bitmap_all, bitmap_preview)
-            if rc2 != 0:
-                sys.exit(rc2)
-
-            # Render the grayscale preview from the generated pixel values (only if grayscale is enabled)
             if args.grayscale:
-                rc3 = render_preview_from_grayscale(codes, glyphs, gray_preview)
-                if rc3 != 0:
-                    sys.exit(rc3)
+                rc = render_combined_preview(
+                    codes, glyphs, bitmap_all, args.preview_output
+                )
+                if rc != 0:
+                    sys.exit(rc)
+            else:
+                # If grayscale is disabled, only render BW preview
+                rc = render_preview_from_data(
+                    codes, glyphs, bitmap_all, args.preview_output
+                )
+                if rc != 0:
+                    sys.exit(rc)
         sys.exit(0)
 
     # Ensure minimum readable sizes
@@ -448,16 +442,19 @@ def main(argv=None):
         )
 
         if args.preview_output:
-            base, ext = os.path.splitext(args.preview_output)
-            bitmap_preview = f"{base}_bitmap{ext}"
-            gray_preview = f"{base}_gray{ext}"
-            rc = render_preview_from_data(codes, glyphs, bitmap_all, bitmap_preview)
-            if rc != 0:
-                sys.exit(rc)
             if args.grayscale:
-                rc2 = render_preview_from_grayscale(codes, glyphs, gray_preview)
-                if rc2 != 0:
-                    sys.exit(rc2)
+                rc = render_combined_preview(
+                    codes, glyphs, bitmap_all, args.preview_output
+                )
+                if rc != 0:
+                    sys.exit(rc)
+            else:
+                # If grayscale is disabled, only render BW preview
+                rc = render_preview_from_data(
+                    codes, glyphs, bitmap_all, args.preview_output
+                )
+                if rc != 0:
+                    sys.exit(rc)
         sys.exit(0)
 
     # Fallback: generate uniform bitmaps (old behavior)

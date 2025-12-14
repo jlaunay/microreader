@@ -12,5 +12,6 @@ extern const SimpleGFXfont Font27;
 
 // Font families
 extern FontFamily notoSansFamily;
+extern FontFamily bookerlyFamily;
 extern FontFamily font14Family;
 extern FontFamily font27Family;

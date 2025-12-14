@@ -41,8 +41,8 @@ def main(argv=None) -> int:
     parser.add_argument(
         "output",
         nargs="?",
-        default="scripts/chars_input.txt",
-        help="Output file to write characters (default: scripts/chars_input.txt)",
+        default="resources/chars_input.txt",
+        help="Output file to write characters (default: resources/chars_input.txt)",
     )
     parser.add_argument(
         "--preserve-order",

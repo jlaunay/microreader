@@ -1,5 +1,9 @@
 #include <Arduino.h>
 
+#include "Bookerly26.h"
+#include "Bookerly26Bold.h"
+#include "Bookerly26BoldItalic.h"
+#include "Bookerly26Italic.h"
 #include "Font14.h"
 #include "Font27.h"
 #include "NotoSans26.h"
@@ -12,13 +16,20 @@ const SimpleGFXfont Font14 = {Font14Bitmaps, nullptr, nullptr, Font14Glyphs, 305
 const SimpleGFXfont Font27 = {Font27Bitmaps, nullptr, nullptr, Font27Glyphs, 305, 29, "Font27", 27, FontStyle::REGULAR};
 
 // Font families (group variants together)
-// Example: NotoSans family
 FontFamily notoSansFamily = {
     "NotoSans",
     &NotoSans26,           // regular
     &NotoSans26Bold,       // bold
     &NotoSans26Italic,     // italic
     &NotoSans26BoldItalic  // boldItalic
+};
+
+FontFamily bookerlyFamily = {
+    "Bookerly",
+    &Bookerly26,           // regular
+    &Bookerly26Bold,       // bold
+    &Bookerly26Italic,     // italic
+    &Bookerly26BoldItalic  // boldItalic
 };
 
 // Example: Font14 family

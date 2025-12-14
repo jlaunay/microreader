@@ -196,7 +196,7 @@ void TextViewerScreen::showPage() {
     display.clearScreen(0xFF);
 
     textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-    textRenderer.setFontFamily(&notoSansFamily);
+    textRenderer.setFontFamily(&bookerlyFamily);
     textRenderer.setFontStyle(FontStyle::ITALIC);
 
     const char* msg = "No document open";
@@ -213,7 +213,7 @@ void TextViewerScreen::showPage() {
 
   display.clearScreen(0xFF);
   textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-  textRenderer.setFontFamily(&notoSansFamily);
+  textRenderer.setFontFamily(&bookerlyFamily);
   textRenderer.setFontStyle(FontStyle::REGULAR);
 
   // print out current percentage
@@ -287,7 +287,7 @@ void TextViewerScreen::showPage() {
   // grayscale rendering
   {
     textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-    textRenderer.setFontFamily(&notoSansFamily);
+    textRenderer.setFontFamily(&bookerlyFamily);
     textRenderer.setFontStyle(FontStyle::REGULAR);
 
     // Render and copy to LSB buffer

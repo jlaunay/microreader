@@ -1,36 +1,11 @@
-﻿CBNavigation Test Documentb
+﻿JI»Lass dich nicht auf einen Kampf mit einem Feind ein, der mächtiger ist als du. Und wenn sich ein Kampf nicht vermeiden lässt, dann sorge dafür, dass er zu deinen Bedingungen ausgetragen wird und nicht zu den Bedingungen deines Feindes.«ij
+IRSun Tzu, Die Kunst des Krieges
+JWir flogen mit relativistischer Geschwindigkeit, bremsten jedoch ein Stück vor 82 Eridani ab, damit uns genug Zeit blieb, unbemerkt von Medeiros die Lage auszuspähen.j
+JBill hatte es ernst gemeint, als er sagte, dass er Milo rächen wolle. Acht von uns, lauter Bobs aus der dritten Baureihe, lauerten ein kleines Stück außerhalb des Sternensystems auf die Gelegenheit, Medeiros unsere gemeinsame Meinung zu geigen. Aber der hatte inzwischen fünfunddreißig Jahre lang Zeit gehabt, sich hier häuslich einzurichten. Und keiner von uns gab sich der Illusion hin, dass wir erneut breitbeinig einlaufen und ihn so problemlos eliminieren konnten wie damals in Epsilon Eridani oder Alpha Centauri.j
 
-JFenster werden geöffnet. Das dürfte nie passieren. Man kann den Ringhefter der Cosa Nostra Pizzauniversität aufschlagen, im Stichwortregister unter IFenster, Tunnel, Ausgabei nachsehen und erfährt dort sämtliche Prozeduren für dieses Fenster und auch, daß es nie geöffnet werden sollte. Es sei denn, es ist etwas schiefgegangen.
-JDas Fenster gleitet zur Seite und sitzen Sie? IRauchi quillt darunter hervor. Der Auslieferator hört ein mißtönendes Plärren über den Heavy Metal-Hurrikan seines Soundsystems und begreift, daß es sich um einen Rauchalarm aus dem Inneren der Anlage handelt.
-JAus-Taste der Stereoanlage. Erdrückendes Schweigen seine Trommelfelle entkrampfen sich, hinter dem Fenster summt der Schrei des Rauchalarms. Das Auto wartet im Leerlauf. Die Luke ist schon zu lange offen, Giftstoffe aus der Atmosphäre schlagen sich auf den elektrischen Kontakten im hinteren Teil der Pizzafächer nieder, er wird sie außerplanmäßig reinigen müssen, und alles läuft genau so, wie es laut dem Ringhefter, der den Rhythmus des Pizzauniversums erklärt, nicht laufen sollte.
+JNun würden wir also Iunsere iGeheimwaffej
 
-JThis is a test document for the FileWordProvider navigation tests. It contains various formatting tokens and text patterns designed to verify correct forward and backward word traversal. The document includes multiple paragraphs with different alignments, inline styles, and edge cases that the word provider must handle correctly.
-JWhen navigating forward through this text, the provider should return each word in sequence, properly handling spaces, newlines, and bracket tokens. Similarly, backward navigation must reconstruct the exact same sequence of words in reverse order. Any mismatch indicates a bug in the navigation logic.
-JHere are some edge cases to test: words-with-hyphens, words_with_underscores, numbers like 12345 and 67890, and special characters such as parentheses (like these) or brackets. The provider must handle all of these correctly without losing or duplicating characters.
-JMultiple consecutive spaces should be handled properly. Tab characters	like this one	and carriage returns must also work. The navigation must be perfectly reversible regardless of whitespace patterns encountered in the input stream.
-CThis paragraph uses center alignment.
-CIt spans multiple lines with explicit alignment on each line.
-CThe alignment applies to each line individually.
-RThis paragraph is right-aligned instead.
-RShort lines here.
-RTesting alignment changes.
-JBack to justified text again. This longer paragraph tests the transition between different alignment modes. The word provider must correctly identify paragraph boundaries and track alignment tokens without interfering with word extraction. Each word should be returned with its associated style information intact.
-JBBold text section here.b Now back to regular text. IItalic text follows.i And regular again. XBold and italic combined.x Final regular text.
-JGerman umlauts and special characters: äöüÄÖÜß. French accents: éèêëàâùûîïôç. These UTF-8 characters must survive round-trip navigation without corruption or byte-boundary issues in the buffer management code.
-JVery short paragraph.
-JA
-JSingle letter paragraphs test edge cases.
-JNumbers: 1 2 3 4 5 6 7 8 9 0
-JPunctuation tests: Hello, world! How are you? Fine; thanks. Items: one, two, three.
+Test Document provider forward
+backward
 
-CBSection Twob
-
-JThis section tests longer continuous text blocks. The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump. The five boxing wizards jump quickly. Sphinx of black quartz judge my vow.
-JContinuing with more test content to ensure buffer boundaries are crossed during navigation. The FileWordProvider uses a fixed-size buffer that gets repositioned as needed. When navigating backward through a long document, the buffer must correctly reload earlier portions of the file without losing track of the current position or corrupting the word extraction logic.
-JEdge case: paragraph ending without newline at very end of paragraph before next alignment token.
-LLeft aligned paragraph for variety. This tests yet another alignment mode to ensure all four alignment types work correctly with the caching mechanism in the word provider implementation.
-JFinal test paragraph with mixed content. Numbers 42 and 1337 mixed with words. Hyphenated-compound-words and CamelCaseIdentifiers. File paths like /usr/local/bin should work. Testing various punctuation marks: colons: semicolons; commas, periods. Exclamations! Questions?
-
-CBThe Endb
-JITest document complete.i
-JOne final justified paragraph to close out the document. This ensures the provider can correctly handle navigation near the end of file boundaries. Backward navigation from here should reconstruct everything perfectly.
+Navigation

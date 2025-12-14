@@ -225,7 +225,7 @@ int main(int argc, char* argv[]) {
 
   // Render some text onto the frame buffer using the TextRenderer
   TextRenderer renderer(display);
-  renderer.setFontFamily(&notoSansFamily);
+  renderer.setFontFamily(&bookerlyFamily);
   renderer.setFontStyle(FontStyle::REGULAR);
   renderer.setTextColor(TextRenderer::COLOR_BLACK);
   renderer.setFrameBuffer(display.getFrameBuffer());
