@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <resources/fonts/Font14.h>
 #include <resources/fonts/FontDefinitions.h>
+#include <resources/fonts/FontManager.h>
 
 #include <cstring>
 
@@ -198,7 +199,7 @@ void TextViewerScreen::showPage() {
     display.clearScreen(0xFF);
 
     textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-    textRenderer.setFontFamily(&bookerlyFamily);
+    textRenderer.setFontFamily(getCurrentFontFamily());
     textRenderer.setFontStyle(FontStyle::ITALIC);
 
     const char* msg = "No document open";
@@ -215,7 +216,7 @@ void TextViewerScreen::showPage() {
 
   display.clearScreen(0xFF);
   textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-  textRenderer.setFontFamily(&bookerlyFamily);
+  textRenderer.setFontFamily(getCurrentFontFamily());
   textRenderer.setFontStyle(FontStyle::REGULAR);
 
   // print out current percentage
@@ -289,7 +290,7 @@ void TextViewerScreen::showPage() {
   // grayscale rendering
   {
     textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-    textRenderer.setFontFamily(&bookerlyFamily);
+    textRenderer.setFontFamily(getCurrentFontFamily());
     textRenderer.setFontStyle(FontStyle::REGULAR);
 
     // Render and copy to LSB buffer
@@ -357,7 +358,7 @@ void TextViewerScreen::prevPage() {
       return;
   }
 
-  textRenderer.setFontFamily(&bookerlyFamily);
+  textRenderer.setFontFamily(getCurrentFontFamily());
 
   // Find where the previous page starts
   pageStartIndex = layoutStrategy->getPreviousPageStart(*provider, textRenderer, layoutConfig, pageStartIndex);
