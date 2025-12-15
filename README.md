@@ -48,11 +48,11 @@ Before flashing custom firmware, back up the factory firmware:
 
 ```powershell
 # Read entire 16MB flash
-esptool.py --chip esp32c3 --port COM5 read_flash 0x0 0x1000000 firmware_backup.bin
+python -m esptool --chip esp32c3 --port COM5 read_flash 0x0 0x1000000 firmware_backup.bin
 ```
 ```powershell
 # Read only app0 (faster)
-esptool.py --chip esp32c3 --port COM5 read_flash 0x10000 0x640000 app0_backup.bin
+python -m esptool --chip esp32c3 --port COM5 read_flash 0x10000 0x640000 app0_backup.bin
 ```
 
 
@@ -62,12 +62,12 @@ To restore the backed-up firmware:
 
 ```powershell
 # Write back the entire flash
-esptool.py --chip esp32c3 --port COM5 write_flash 0x0 firmware_backup.bin
+python -m esptool --chip esp32c3 --port COM5 write_flash 0x0 firmware_backup.bin
 ```
 
 ```powershell
 # Write back only app0 (faster)
-esptool.py --chip esp32c3 --port COM5 write_flash 0x10000 app0_backup.bin
+python -m esptool --chip esp32c3 --port COM5 write_flash 0x10000 app0_backup.bin
 ```
 
 **Important**: Make sure to use the correct COM port for your device.

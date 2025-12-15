@@ -433,8 +433,7 @@ void EpubWordProvider::performXhtmlToTxtConversion(SimpleXmlParser& parser, File
         continue;
       }
 
-      // Check for &nbsp; before normalizing (marks intentional spacing)
-      if (text.indexOf('\xA0') >= 0) {
+      if (text.indexOf("\xC2\xA0") >= 0) {
         lineHasNbsp = true;
       }
 
@@ -562,7 +561,7 @@ String EpubWordProvider::readAndDecodeText(SimpleXmlParser& parser) {
 
 String EpubWordProvider::decodeHtmlEntity(const String& entity) {
   if (entity == "&nbsp;")
-    return "\xA0";  // Non-breaking space (0xA0) - used to detect intentional blank lines
+    return "\xC2\xA0";  // Non-breaking space
   if (entity == "&amp;")
     return "&";
   if (entity == "&lt;")
@@ -582,11 +581,12 @@ String EpubWordProvider::normalizeWhitespace(const String& text) {
   bool lastWasSpace = false;
 
   for (int i = 0; i < text.length(); i++) {
-    char c = text.charAt(i);
+    unsigned char c = (unsigned char)text.charAt(i);
 
-    // Convert non-breaking space to regular space
-    if (c == '\xA0') {
+    // Handle non-breaking space forms by converting to a normal space
+    if (c == 0xC2 && i + 1 < text.length() && (unsigned char)text.charAt(i + 1) == 0xA0) {
       c = ' ';
+      i++;  // skip the second byte (0xA0)
     }
 
     bool isSpace = (c == ' ' || c == '\n');
