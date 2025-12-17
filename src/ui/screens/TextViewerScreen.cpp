@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <resources/fonts/Font14.h>
 #include <resources/fonts/FontDefinitions.h>
+#include "../../core/Settings.h"
 
 #include <cstring>
 
@@ -53,35 +54,14 @@ void TextViewerScreen::loadSettingsFromFile() {
   if (!sdManager.ready())
     return;
 
-  char buf[512];
-  size_t r = sdManager.readFileToBuffer("/microreader/textviewer_state.txt", buf, sizeof(buf));
-  if (r == 0)
-    return;
+  // Prefer consolidated settings (may have been imported from legacy files)
+  Settings& s = uiManager.getSettings();
 
-  // Ensure null-termination
-  buf[sizeof(buf) - 1] = '\0';
-
-  // First line: last opened file path
-  char* nl = strchr(buf, '\n');
-  String savedPath = String("");
-  char* secondLine = nullptr;
-  if (nl) {
-    *nl = '\0';
-    if (strlen(buf) > 0)
-      savedPath = String(buf);
-    secondLine = nl + 1;
-  } else {
-    // Only single line present -> treat as path
-    if (strlen(buf) > 0)
-      savedPath = String(buf);
-  }
-
-  // If there's a second line, parse layout config first so it applies
-  // before we open the saved file and layout pages.
-  if (secondLine && strlen(secondLine) > 0) {
-    // Copy to temp buffer for strtok
+  String layoutCsv = s.getString(String("textviewer.layout"), String(""));
+  if (layoutCsv.length() > 0) {
+    // Parse CSV same as legacy format
     char tmp[256];
-    strncpy(tmp, secondLine, sizeof(tmp) - 1);
+    strncpy(tmp, layoutCsv.c_str(), sizeof(tmp) - 1);
     tmp[sizeof(tmp) - 1] = '\0';
     char* tok = strtok(tmp, ",");
     int values[9];
@@ -92,27 +72,9 @@ void TextViewerScreen::loadSettingsFromFile() {
     }
     if (idx >= 1)  // alignment at minimum
       layoutConfig.alignment = static_cast<LayoutStrategy::TextAlignment>(values[0]);
-    // if (idx >= 2)
-    //   layoutConfig.marginLeft = values[1];
-    // if (idx >= 3)
-    //   layoutConfig.marginRight = values[2];
-    // if (idx >= 4)
-    //   layoutConfig.marginTop = values[3];
-    // if (idx >= 5)
-    //   layoutConfig.marginBottom = values[4];
-    // if (idx >= 6)
-    //   layoutConfig.lineHeight = values[5];
-    // if (idx >= 7)
-    //   layoutConfig.minSpaceWidth = values[6];
-    // if (idx >= 8)
-    //   layoutConfig.pageWidth = values[7];
-    // if (idx >= 9)
-    //   layoutConfig.pageHeight = values[8];
   }
 
-  // If a saved path exists, record it for lazy opening when the screen is
-  // actually shown. This preserves `begin()` as an init-only call and avoids
-  // drawing during initialization.
+  String savedPath = s.getString(String("textviewer.lastPath"), String(""));
   if (savedPath.length() > 0) {
     pendingOpenPath = savedPath;
   }
@@ -122,18 +84,19 @@ void TextViewerScreen::saveSettingsToFile() {
   if (!sdManager.ready())
     return;
 
-  // First line: current file path (may be empty)
-  String content = currentFilePath + "\n";
+  Settings& s = uiManager.getSettings();
+  s.setString(String("textviewer.lastPath"), currentFilePath);
 
-  // Second line: comma-separated layout config values
-  content += String(static_cast<int>(layoutConfig.alignment)) + "," + String(layoutConfig.marginLeft) + "," +
-             String(layoutConfig.marginRight) + "," + String(layoutConfig.marginTop) + "," +
-             String(layoutConfig.marginBottom) + "," + String(layoutConfig.lineHeight) + "," +
-             String(layoutConfig.minSpaceWidth) + "," + String(layoutConfig.pageWidth) + "," +
-             String(layoutConfig.pageHeight);
+  // Second line: comma-separated layout config values (store as CSV)
+  String csv = String(static_cast<int>(layoutConfig.alignment)) + "," + String(layoutConfig.marginLeft) + "," +
+               String(layoutConfig.marginRight) + "," + String(layoutConfig.marginTop) + "," +
+               String(layoutConfig.marginBottom) + "," + String(layoutConfig.lineHeight) + "," +
+               String(layoutConfig.minSpaceWidth) + "," + String(layoutConfig.pageWidth) + "," +
+               String(layoutConfig.pageHeight);
+  s.setString(String("textviewer.layout"), csv);
 
-  if (!sdManager.writeFile("/microreader/textviewer_state.txt", content)) {
-    Serial.println("TextViewerScreen: Failed to write textviewer_state.txt");
+  if (!s.save()) {
+    Serial.println("TextViewerScreen: Failed to write settings.cfg");
   }
 }
 
@@ -526,7 +489,6 @@ void TextViewerScreen::savePositionToFile() {
 void TextViewerScreen::loadPositionFromFile() {
   if (currentFilePath.length() == 0)
     return;
-
   String posPath = currentFilePath + String(".pos");
   char buf[64];
   size_t r = sdManager.readFileToBuffer(posPath.c_str(), buf, sizeof(buf));

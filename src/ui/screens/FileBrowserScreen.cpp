@@ -28,9 +28,6 @@ void FileBrowserScreen::handleButtons(Buttons& buttons) {
   } else if (buttons.isPressed(Buttons::RIGHT)) {
     selectPrev();
   }
-  //  else if (buttons.isPressed(Buttons::VOLUME_UP)) {
-  //   uiManager.showScreen(UIManager::ScreenId::ImageViewer);
-  // }
 }
 
 void FileBrowserScreen::activate() {
