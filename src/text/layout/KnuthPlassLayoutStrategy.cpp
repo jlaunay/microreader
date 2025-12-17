@@ -88,15 +88,15 @@ LayoutStrategy::PageLayout KnuthPlassLayoutStrategy::layoutText(WordProvider& pr
 
         // Calculate indentation from leading spaces for first line
         int16_t indent = 0;
-        if (breakIdx == 0) {
-          for (const auto& w : lineWords) {
-            if (w.text == " ") {
-              indent += w.width;
-            } else {
-              break;
-            }
-          }
-        }
+        // if (breakIdx == 0) {
+        //   for (const auto& w : lineWords) {
+        //     if (w.text == " ") {
+        //       indent += w.width;
+        //     } else {
+        //       break;
+        //     }
+        //   }
+        // }
         const int16_t x = config.marginLeft + indent;
         int16_t effectiveMaxWidth = maxWidth - indent;
 
