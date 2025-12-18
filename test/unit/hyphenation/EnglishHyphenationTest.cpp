@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "text/hyphenation/GermanHyphenation.h"
+#include "text/hyphenation/EnglishHyphenation.h"
 
 struct TestCase {
   std::string word;
@@ -22,7 +22,7 @@ struct EvaluationResult {
   double precision = 0.0;
   double recall = 0.0;
   double f1Score = 0.0;
-  double weightedScore = 0.0;  // Penalize false positives more
+  double weightedScore = 0.0;
 };
 
 std::vector<TestCase> loadTestData(const std::string& filename) {
@@ -36,12 +36,10 @@ std::vector<TestCase> loadTestData(const std::string& filename) {
 
   std::string line;
   while (std::getline(file, line)) {
-    // Skip comments and empty lines
     if (line.empty() || line[0] == '#') {
       continue;
     }
 
-    // Parse: word|hyphenated|frequency
     std::istringstream iss(line);
     std::string word, hyphenated, freqStr;
 
@@ -51,7 +49,6 @@ std::vector<TestCase> loadTestData(const std::string& filename) {
       testCase.hyphenated = hyphenated;
       testCase.frequency = std::stoi(freqStr);
 
-      // Extract expected positions (where '=' appears)
       size_t charPos = 0;
       for (size_t i = 0; i < hyphenated.length(); i++) {
         if (hyphenated[i] == '=') {
@@ -83,18 +80,14 @@ std::string positionsToHyphenated(const std::string& word, const std::vector<siz
 EvaluationResult evaluateWord(const TestCase& testCase) {
   EvaluationResult result;
 
-  // Get hyphenation from our implementation
-  std::vector<size_t> actualPositions = GermanHyphenation::hyphenate(testCase.word);
+  std::vector<size_t> actualPositions = EnglishHyphenation::hyphenate(testCase.word);
 
-  // Convert to sets for comparison
   std::vector<size_t> expected = testCase.expectedPositions;
   std::vector<size_t> actual = actualPositions;
 
-  // Sort both vectors
   std::sort(expected.begin(), expected.end());
   std::sort(actual.begin(), actual.end());
 
-  // Calculate true positives (correct hyphenation points)
   for (size_t pos : actual) {
     if (std::find(expected.begin(), expected.end(), pos) != expected.end()) {
       result.truePositives++;
@@ -103,14 +96,12 @@ EvaluationResult evaluateWord(const TestCase& testCase) {
     }
   }
 
-  // Calculate false negatives (missed hyphenation points)
   for (size_t pos : expected) {
     if (std::find(actual.begin(), actual.end(), pos) == actual.end()) {
       result.falseNegatives++;
     }
   }
 
-  // Calculate metrics
   if (result.truePositives + result.falsePositives > 0) {
     result.precision = static_cast<double>(result.truePositives) / (result.truePositives + result.falsePositives);
   }
@@ -123,8 +114,6 @@ EvaluationResult evaluateWord(const TestCase& testCase) {
     result.f1Score = 2 * result.precision * result.recall / (result.precision + result.recall);
   }
 
-  // Weighted score: penalize false positives 2x more than false negatives
-  // Lower false positives is better (incorrect hyphenation is worse than missing one)
   double fpPenalty = 2.0;
   double fnPenalty = 1.0;
 
@@ -142,7 +131,7 @@ EvaluationResult evaluateWord(const TestCase& testCase) {
 }
 
 int main(int argc, char* argv[]) {
-  std::string testDataFile = "test/resources/german_hyphenation_tests.txt";
+  std::string testDataFile = "test/resources/english_hyphenation_tests.txt";
 
   if (argc > 1) {
     testDataFile = argv[1];
@@ -158,7 +147,6 @@ int main(int argc, char* argv[]) {
   std::cout << "Loaded " << testCases.size() << " test cases" << std::endl;
   std::cout << std::endl;
 
-  // Evaluate all test cases
   int perfectMatches = 0;
   int partialMatches = 0;
   int completeMisses = 0;
@@ -192,17 +180,14 @@ int main(int argc, char* argv[]) {
       completeMisses++;
     }
 
-    // Track worst cases (lowest weighted score)
     worstCases.push_back({testCase, result});
   }
 
-  // Sort worst cases by weighted score
   std::sort(worstCases.begin(), worstCases.end(),
             [](const auto& a, const auto& b) { return a.second.weightedScore < b.second.weightedScore; });
 
-  // Print results
   std::cout << "================================================================================" << std::endl;
-  std::cout << "HYPHENATION EVALUATION RESULTS" << std::endl;
+  std::cout << "ENGLISH HYPHENATION EVALUATION RESULTS" << std::endl;
   std::cout << "================================================================================" << std::endl;
   std::cout << std::endl;
 
@@ -237,14 +222,13 @@ int main(int argc, char* argv[]) {
   std::cout << "Overall F1 Score:        " << (overallF1 * 100.0) << "%" << std::endl;
   std::cout << std::endl;
 
-  // Show worst cases
   std::cout << "--- Worst Cases (lowest weighted scores) ---" << std::endl;
   int showCount = std::min(20, static_cast<int>(worstCases.size()));
   for (int i = 0; i < showCount; i++) {
     const auto& testCase = worstCases[i].first;
     const auto& result = worstCases[i].second;
 
-    std::vector<size_t> actualPositions = GermanHyphenation::hyphenate(testCase.word);
+    std::vector<size_t> actualPositions = EnglishHyphenation::hyphenate(testCase.word);
     std::string actualHyphenated = positionsToHyphenated(testCase.word, actualPositions);
 
     std::cout << "Word: " << testCase.word << " (freq: " << testCase.frequency << ")" << std::endl;

@@ -1,8 +1,8 @@
 #include "TextViewerScreen.h"
 
 #include <Arduino.h>
-#include <resources/fonts/Font14.h>
 #include <resources/fonts/FontDefinitions.h>
+#include <resources/fonts/FontManager.h>
 
 #include <cstring>
 
@@ -11,6 +11,7 @@
 #include "../../content/providers/StringWordProvider.h"
 #include "../../core/Buttons.h"
 #include "../../core/SDCardManager.h"
+#include "../../core/Settings.h"
 #include "../../text/hyphenation/HyphenationStrategy.h"
 #include "../../text/layout/GreedyLayoutStrategy.h"
 #include "../../text/layout/KnuthPlassLayoutStrategy.h"
@@ -33,7 +34,7 @@ TextViewerScreen::TextViewerScreen(EInkDisplay& display, TextRenderer& renderer,
   layoutConfig.pageWidth = 480;
   layoutConfig.pageHeight = 800;
   layoutConfig.alignment = LayoutStrategy::ALIGN_LEFT;
-  layoutConfig.language = Language::GERMAN;  // Default to German hyphenation
+  layoutConfig.language = Language::ENGLISH;  // Default to english hyphenation
 
   // Set the language on the layout strategy
   layoutStrategy->setLanguage(layoutConfig.language);
@@ -53,35 +54,14 @@ void TextViewerScreen::loadSettingsFromFile() {
   if (!sdManager.ready())
     return;
 
-  char buf[512];
-  size_t r = sdManager.readFileToBuffer("/microreader/textviewer_state.txt", buf, sizeof(buf));
-  if (r == 0)
-    return;
+  // Prefer consolidated settings (may have been imported from legacy files)
+  Settings& s = uiManager.getSettings();
 
-  // Ensure null-termination
-  buf[sizeof(buf) - 1] = '\0';
-
-  // First line: last opened file path
-  char* nl = strchr(buf, '\n');
-  String savedPath = String("");
-  char* secondLine = nullptr;
-  if (nl) {
-    *nl = '\0';
-    if (strlen(buf) > 0)
-      savedPath = String(buf);
-    secondLine = nl + 1;
-  } else {
-    // Only single line present -> treat as path
-    if (strlen(buf) > 0)
-      savedPath = String(buf);
-  }
-
-  // If there's a second line, parse layout config first so it applies
-  // before we open the saved file and layout pages.
-  if (secondLine && strlen(secondLine) > 0) {
-    // Copy to temp buffer for strtok
+  String layoutCsv = s.getString(String("textviewer.layout"), String(""));
+  if (layoutCsv.length() > 0) {
+    // Parse CSV same as legacy format
     char tmp[256];
-    strncpy(tmp, secondLine, sizeof(tmp) - 1);
+    strncpy(tmp, layoutCsv.c_str(), sizeof(tmp) - 1);
     tmp[sizeof(tmp) - 1] = '\0';
     char* tok = strtok(tmp, ",");
     int values[9];
@@ -92,29 +72,19 @@ void TextViewerScreen::loadSettingsFromFile() {
     }
     if (idx >= 1)  // alignment at minimum
       layoutConfig.alignment = static_cast<LayoutStrategy::TextAlignment>(values[0]);
-    // if (idx >= 2)
-    //   layoutConfig.marginLeft = values[1];
-    // if (idx >= 3)
-    //   layoutConfig.marginRight = values[2];
-    // if (idx >= 4)
-    //   layoutConfig.marginTop = values[3];
-    // if (idx >= 5)
-    //   layoutConfig.marginBottom = values[4];
-    // if (idx >= 6)
-    //   layoutConfig.lineHeight = values[5];
-    // if (idx >= 7)
-    //   layoutConfig.minSpaceWidth = values[6];
-    // if (idx >= 8)
-    //   layoutConfig.pageWidth = values[7];
-    // if (idx >= 9)
-    //   layoutConfig.pageHeight = values[8];
   }
 
-  // If a saved path exists, record it for lazy opening when the screen is
-  // actually shown. This preserves `begin()` as an init-only call and avoids
-  // drawing during initialization.
+  String savedPath = s.getString(String("textviewer.lastPath"), String(""));
   if (savedPath.length() > 0) {
     pendingOpenPath = savedPath;
+  }
+
+  // Load chapter numbers display setting (default to true)
+  int showChapterNumbersInt = 1;  // Default to true
+  if (s.getInt(String("textviewer.showChapterNumbers"), showChapterNumbersInt)) {
+    showChapterNumbers = (showChapterNumbersInt != 0);
+  } else {
+    showChapterNumbers = true;  // Default if not found
   }
 }
 
@@ -122,18 +92,22 @@ void TextViewerScreen::saveSettingsToFile() {
   if (!sdManager.ready())
     return;
 
-  // First line: current file path (may be empty)
-  String content = currentFilePath + "\n";
+  Settings& s = uiManager.getSettings();
+  s.setString(String("textviewer.lastPath"), currentFilePath);
 
-  // Second line: comma-separated layout config values
-  content += String(static_cast<int>(layoutConfig.alignment)) + "," + String(layoutConfig.marginLeft) + "," +
-             String(layoutConfig.marginRight) + "," + String(layoutConfig.marginTop) + "," +
-             String(layoutConfig.marginBottom) + "," + String(layoutConfig.lineHeight) + "," +
-             String(layoutConfig.minSpaceWidth) + "," + String(layoutConfig.pageWidth) + "," +
-             String(layoutConfig.pageHeight);
+  // Second line: comma-separated layout config values (store as CSV)
+  String csv = String(static_cast<int>(layoutConfig.alignment)) + "," + String(layoutConfig.marginLeft) + "," +
+               String(layoutConfig.marginRight) + "," + String(layoutConfig.marginTop) + "," +
+               String(layoutConfig.marginBottom) + "," + String(layoutConfig.lineHeight) + "," +
+               String(layoutConfig.minSpaceWidth) + "," + String(layoutConfig.pageWidth) + "," +
+               String(layoutConfig.pageHeight);
+  s.setString(String("textviewer.layout"), csv);
 
-  if (!sdManager.writeFile("/microreader/textviewer_state.txt", content)) {
-    Serial.println("TextViewerScreen: Failed to write textviewer_state.txt");
+  // Save chapter numbers display setting
+  s.setInt(String("textviewer.showChapterNumbers"), showChapterNumbers ? 1 : 0);
+
+  if (!s.save()) {
+    Serial.println("TextViewerScreen: Failed to write settings.cfg");
   }
 }
 
@@ -198,7 +172,7 @@ void TextViewerScreen::showPage() {
     display.clearScreen(0xFF);
 
     textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-    textRenderer.setFontFamily(&bookerlyFamily);
+    textRenderer.setFontFamily(getCurrentFontFamily());
     textRenderer.setFontStyle(FontStyle::ITALIC);
 
     const char* msg = "No document open";
@@ -215,7 +189,7 @@ void TextViewerScreen::showPage() {
 
   display.clearScreen(0xFF);
   textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-  textRenderer.setFontFamily(&bookerlyFamily);
+  textRenderer.setFontFamily(getCurrentFontFamily());
   textRenderer.setFontStyle(FontStyle::REGULAR);
 
   // print out current percentage
@@ -265,13 +239,30 @@ void TextViewerScreen::showPage() {
       }
     }
 
-    textRenderer.setFont(&Font14);
+    textRenderer.setFont(getMainFont());
 
-    // Build indicator string: "ChapterName - Z%" or just "Z%" if no chapter name
+    // Build indicator string with chapter info if available
+    // Format: "Ch X/Y - Z%" or "ChapterName (X/Y) - Z%" or just "Z%"
     String indicator;
-    String chapterName = provider->getCurrentChapterName();
-    if (!chapterName.isEmpty()) {
-      indicator = chapterName + " - ";
+    if (provider->hasChapters() && provider->getChapterCount() > 1) {
+      String chapterName = provider->getCurrentChapterName();
+      if (!chapterName.isEmpty()) {
+        // Truncate long chapter names
+        if (chapterName.length() > 30) {
+          chapterName = chapterName.substring(0, 27) + "...";
+        }
+        indicator = chapterName;
+        if (showChapterNumbers) {
+          int currentCh = provider->getCurrentChapter() + 1;  // 1-indexed for display
+          int totalCh = provider->getChapterCount();
+          indicator += " (" + String(currentCh) + "/" + String(totalCh) + ")";
+        }
+        indicator += " - ";
+      } else if (showChapterNumbers) {
+        int currentCh = provider->getCurrentChapter() + 1;  // 1-indexed for display
+        int totalCh = provider->getChapterCount();
+        indicator = "Ch " + String(currentCh) + "/" + String(totalCh) + " - ";
+      }
     }
     indicator += String((int)(pagePercentage * 100)) + "%";
 
@@ -289,7 +280,7 @@ void TextViewerScreen::showPage() {
   // grayscale rendering
   {
     textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-    textRenderer.setFontFamily(&bookerlyFamily);
+    textRenderer.setFontFamily(getCurrentFontFamily());
     textRenderer.setFontStyle(FontStyle::REGULAR);
 
     // Render and copy to LSB buffer
@@ -357,7 +348,7 @@ void TextViewerScreen::prevPage() {
       return;
   }
 
-  textRenderer.setFontFamily(&bookerlyFamily);
+  textRenderer.setFontFamily(getCurrentFontFamily());
 
   // Find where the previous page starts
   pageStartIndex = layoutStrategy->getPreviousPageStart(*provider, textRenderer, layoutConfig, pageStartIndex);
@@ -448,6 +439,7 @@ void TextViewerScreen::openFile(const String& sdPath) {
 
   if (!sdManager.ready()) {
     Serial.println("TextViewerScreen: SD not ready; cannot open file.");
+    showErrorMessage("SD card not ready");
     return;
   }
 
@@ -476,9 +468,11 @@ void TextViewerScreen::openFile(const String& sdPath) {
       Serial.printf("TextViewerScreen: failed to open EPUB %s\n", sdPath.c_str());
       delete ep;
       currentFilePath = String("");
+      showErrorMessage("Failed to open EPUB");
       return;
     }
     provider = ep;
+
   } else {
     // Use regular file word provider for text files
     FileWordProvider* fp = new FileWordProvider(sdPath.c_str());
@@ -486,9 +480,22 @@ void TextViewerScreen::openFile(const String& sdPath) {
       Serial.printf("TextViewerScreen: failed to open %s\n", sdPath.c_str());
       delete fp;
       currentFilePath = String("");
+      showErrorMessage("Failed to open file");
       return;
     }
     provider = fp;
+  }
+
+  // Set the hyphenation language based on the file type
+  if (isEpub) {
+    // For EPUB files, get language from the EPUB metadata
+    EpubWordProvider* epubProvider = static_cast<EpubWordProvider*>(provider);
+    Language epubLanguage = epubProvider->getLanguage();
+    layoutStrategy->setLanguage(epubLanguage);
+    Serial.printf("Set hyphenation language to %d for EPUB\n", static_cast<int>(epubLanguage));
+  } else {
+    // For non-EPUB files, use default English hyphenation
+    layoutStrategy->setLanguage(Language::ENGLISH);
   }
 
   // Set chapter first (if provider supports it), then position within chapter
@@ -526,7 +533,6 @@ void TextViewerScreen::savePositionToFile() {
 void TextViewerScreen::loadPositionFromFile() {
   if (currentFilePath.length() == 0)
     return;
-
   String posPath = currentFilePath + String(".pos");
   char buf[64];
   size_t r = sdManager.readFileToBuffer(posPath.c_str(), buf, sizeof(buf));
@@ -565,4 +571,22 @@ void TextViewerScreen::shutdown() {
   // Persist the current position for the opened file (if any)
   savePositionToFile();
   saveSettingsToFile();
+}
+
+void TextViewerScreen::showErrorMessage(const char* msg) {
+  display.clearScreen(0xFF);
+
+  textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
+  textRenderer.setFontFamily(&bookerlyFamily);
+  textRenderer.setFontStyle(FontStyle::ITALIC);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  textRenderer.getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
+  int16_t centerX = (480 - w) / 2;
+  int16_t centerY = (800 - h) / 2;
+  textRenderer.setCursor(centerX, centerY);
+  textRenderer.print(msg);
+
+  display.displayBuffer(EInkDisplay::FAST_REFRESH);
 }

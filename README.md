@@ -70,22 +70,15 @@ test/
 
 Tests run on your machine - no hardware required. Uses mocked Arduino APIs.
 
-### Requirements
-- C++17 compiler (g++, clang++)
-- CMake 3.10+
-
-### Build & Run
-
-**macOS / Linux:**
-```bash
-test/scripts/build_tests.sh
-test/scripts/run_tests.sh
+```powershell
+# Write back the entire flash
+python -m esptool --chip esp32c3 --baud 921600 --port COM5 write_flash 0x0 firmware_backup.bin
 ```
 
 **Windows (PowerShell):**
 ```powershell
-test\scripts\build_tests.ps1
-test\scripts\run_tests.ps1
+# Write back only app0 (faster)
+python -m esptool --chip esp32c3 --baud 921600 --port COM5 write_flash 0x10000 app0_backup.bin
 ```
 
 ### Run a specific test
@@ -223,6 +216,22 @@ python -m esptool --port COM4 write_flash 0xE000 otadata_boot_app0.bin
 python -m esptool --port COM4 write_flash 0xE000 otadata_boot_app1.bin
 ```
 
-</details>
+## Settings consolidation
+
+Settings are now consolidated into a single file stored at `/microreader/settings.cfg` on the SD card. The file uses a simple key=value format and is intentionally easy to extend.
+
+Keys of note:
+- `ui.screen` - integer last-visible screen id
+- `textviewer.lastPath` - last opened file path
+- `textviewer.layout` - layout CSV matching previous format
+
+Per-file positions are stored in `.pos` files next to each document (e.g. `/books/foo.txt.pos`) and continue to be used as before; they are not part of `settings.cfg`.
+
+The Settings manager is implemented in `src/core/Settings.{h,cpp}`.
+
+### LUT Editor
+`scripts/lut_editor.py` - Visual editor for e-ink display waveform lookup tables
+- Edit voltage patterns and timing groups
+- Configure display refresh settings
 
 **Note:** Replace `COM5`/`COM4` with your actual port (`/dev/ttyUSB0` on Linux, `/dev/cu.usbserial-*` on macOS).

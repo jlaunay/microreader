@@ -1,14 +1,13 @@
 
 #include "FileBrowserScreen.h"
-
-#include <resources/fonts/Font14.h>
-#include <resources/fonts/Font27.h>
+#include <resources/fonts/FontManager.h>
 
 #include <algorithm>
 #include <cstring>
 
 #include "../../core/BatteryMonitor.h"
 #include "../../core/Buttons.h"
+#include "../../core/Settings.h"
 #include "../UIManager.h"
 
 FileBrowserScreen::FileBrowserScreen(EInkDisplay& display, TextRenderer& renderer, SDCardManager& sdManager,
@@ -28,9 +27,6 @@ void FileBrowserScreen::handleButtons(Buttons& buttons) {
   } else if (buttons.isPressed(Buttons::RIGHT)) {
     selectPrev();
   }
-  //  else if (buttons.isPressed(Buttons::VOLUME_UP)) {
-  //   uiManager.showScreen(UIManager::ScreenId::ImageViewer);
-  // }
 }
 
 void FileBrowserScreen::activate() {
@@ -45,7 +41,7 @@ void FileBrowserScreen::show() {
 void FileBrowserScreen::renderSdBrowser() {
   display.clearScreen(0xFF);
   textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
-  textRenderer.setFont(&Font27);
+  textRenderer.setFont(getTitleFont());
 
   // Set framebuffer to BW buffer for rendering
   textRenderer.setFrameBuffer(display.getFrameBuffer());
@@ -62,10 +58,10 @@ void FileBrowserScreen::renderSdBrowser() {
     textRenderer.print(title);
   }
 
-  textRenderer.setFont(&Font14);
+  textRenderer.setFont(getMainFont());
 
   // Render file list centered both horizontally and vertically.
-  textRenderer.setFont(&Font14);
+  textRenderer.setFont(getMainFont());
   const int lineHeight = 28;
   int lines = SD_LINES_PER_SCREEN;
 
@@ -120,7 +116,7 @@ void FileBrowserScreen::renderSdBrowser() {
 
   // Draw battery percentage at bottom-right of the screen
   {
-    textRenderer.setFont(&Font14);
+    textRenderer.setFont(getMainFont());
     int pct = g_battery.readPercentage();
     String pctStr = String(pct) + "%";
     int16_t bx1, by1;
@@ -170,6 +166,12 @@ void FileBrowserScreen::offsetSelection(int offset) {
     sdScrollOffset = sdSelectedIndex;
   }
 
+  // Persist the current selection into consolidated settings
+  if (!sdFiles.empty()) {
+    Settings& s = uiManager.getSettings();
+    s.setString(String("filebrowser.selected"), sdFiles[sdSelectedIndex]);
+  }
+
   show();
 }
 
@@ -206,8 +208,23 @@ void FileBrowserScreen::loadFolder(int maxFiles) {
   std::sort(sdFiles.begin(), sdFiles.end(),
             [](const String& a, const String& b) { return std::strcmp(a.c_str(), b.c_str()) < 0; });
 
-  if (sdSelectedIndex >= sdFiles.size()) {
-    sdSelectedIndex = 0;
-    sdScrollOffset = 0;
+  // Restore saved selection if available and present in this folder
+  sdSelectedIndex = 0;
+  sdScrollOffset = 0;
+  if (!sdFiles.empty()) {
+    Settings& s = uiManager.getSettings();
+    String saved = s.getString(String("filebrowser.selected"), String(""));
+    if (saved.length() > 0) {
+      for (size_t i = 0; i < sdFiles.size(); ++i) {
+        if (sdFiles[i] == saved) {
+          sdSelectedIndex = (int)i;
+          if (sdSelectedIndex >= SD_LINES_PER_SCREEN)
+            sdScrollOffset = sdSelectedIndex - SD_LINES_PER_SCREEN + 1;
+          else
+            sdScrollOffset = 0;
+          break;
+        }
+      }
+    }
   }
 }
