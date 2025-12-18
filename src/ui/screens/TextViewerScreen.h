@@ -63,6 +63,8 @@ class TextViewerScreen : public Screen {
   // Persist/load viewer settings (last opened file path + layout config)
   void saveSettingsToFile();
   void loadSettingsFromFile();
+  // Display an error message on screen
+  void showErrorMessage(const char* msg);
 };
 
 #endif

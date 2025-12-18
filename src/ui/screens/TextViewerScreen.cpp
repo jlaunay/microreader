@@ -411,6 +411,7 @@ void TextViewerScreen::openFile(const String& sdPath) {
 
   if (!sdManager.ready()) {
     Serial.println("TextViewerScreen: SD not ready; cannot open file.");
+    showErrorMessage("SD card not ready");
     return;
   }
 
@@ -439,6 +440,7 @@ void TextViewerScreen::openFile(const String& sdPath) {
       Serial.printf("TextViewerScreen: failed to open EPUB %s\n", sdPath.c_str());
       delete ep;
       currentFilePath = String("");
+      showErrorMessage("Failed to open EPUB");
       return;
     }
     provider = ep;
@@ -450,6 +452,7 @@ void TextViewerScreen::openFile(const String& sdPath) {
       Serial.printf("TextViewerScreen: failed to open %s\n", sdPath.c_str());
       delete fp;
       currentFilePath = String("");
+      showErrorMessage("Failed to open file");
       return;
     }
     provider = fp;
@@ -540,4 +543,22 @@ void TextViewerScreen::shutdown() {
   // Persist the current position for the opened file (if any)
   savePositionToFile();
   saveSettingsToFile();
+}
+
+void TextViewerScreen::showErrorMessage(const char* msg) {
+  display.clearScreen(0xFF);
+
+  textRenderer.setTextColor(TextRenderer::COLOR_BLACK);
+  textRenderer.setFontFamily(&bookerlyFamily);
+  textRenderer.setFontStyle(FontStyle::ITALIC);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  textRenderer.getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
+  int16_t centerX = (480 - w) / 2;
+  int16_t centerY = (800 - h) / 2;
+  textRenderer.setCursor(centerX, centerY);
+  textRenderer.print(msg);
+
+  display.displayBuffer(EInkDisplay::FAST_REFRESH);
 }
