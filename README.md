@@ -2,15 +2,21 @@
 
 A minimal EPUB/TXT reader for ESP32-C3 e-ink devices.
 
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+  <img src="resources/images/20251218_181610.jpg" alt="Sample 1" style="width: 100%;">
+  <img src="resources/images/20251218_181719.jpg" alt="Sample 2" style="width: 100%;">
+  <img src="resources/images/20251218_181444.jpg" alt="Sample 3" style="width: 100%;">
+  <img src="resources/images/20251218_181453.jpg" alt="Sample 4" style="width: 100%;">
+</div>
+
 ## Features
 
 - [x] Antialiased font rendering
 - [x] TXT file reader with advanced text layout
 - [x] File browser for SD card navigation
 - [x] Bold/Italic font support (`*bold*`, `_italic_` in TXT, CSS styles in EPUB)
-- [x] German hyphenation
-- [ ] EPUB reader (in progress)
-- [ ] English hyphenation
+- [x] Simple English/German hyphenation
+- [x] EPUB reader
 
 ---
 
@@ -216,6 +222,9 @@ python -m esptool --port COM4 write_flash 0xE000 otadata_boot_app0.bin
 python -m esptool --port COM4 write_flash 0xE000 otadata_boot_app1.bin
 ```
 
+**Note:** Replace `COM5`/`COM4` with your actual port (`/dev/ttyUSB0` on Linux, `/dev/cu.usbserial-*` on macOS).
+</details>
+
 ## Settings consolidation
 
 Settings are now consolidated into a single file stored at `/microreader/settings.cfg` on the SD card. The file uses a simple key=value format and is intentionally easy to extend.
@@ -233,5 +242,3 @@ The Settings manager is implemented in `src/core/Settings.{h,cpp}`.
 `scripts/lut_editor.py` - Visual editor for e-ink display waveform lookup tables
 - Edit voltage patterns and timing groups
 - Configure display refresh settings
-
-**Note:** Replace `COM5`/`COM4` with your actual port (`/dev/ttyUSB0` on Linux, `/dev/cu.usbserial-*` on macOS).
